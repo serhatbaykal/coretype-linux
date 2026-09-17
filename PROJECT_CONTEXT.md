@@ -1,7 +1,8 @@
 # 📌 PROJE ADI: CoreType for Linux
-> **Son Güncelleme:** 2026-09-17 07:52  
-> **Mevcut Durum:** Ayarlar Penceresi Boyutlarının 900x1000px Olarak Güncellenmesi  
-> **Aktif Versiyon:** v0.1.0
+> **Son Güncelleme:** 2026-09-17 16:55  
+> **Mevcut Durum:** Git Sürüm Kontrolü ve GitHub Private Repo Senkronizasyonu (main branch)  
+> **GitHub Deposu:** https://github.com/serhatbaykal/coretype-linux (Private)  
+> **Aktif Versiyon:** v0.1.0 (Baseline)
 
 ---
 

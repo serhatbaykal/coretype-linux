@@ -559,6 +559,38 @@ fn get_secret(app_handle: AppHandle, key: String) -> Result<String, String> {
         .to_string())
 }
 
+#[tauri::command]
+fn update_tray_language(app_handle: AppHandle, language: String) -> Result<(), String> {
+    let (show_text, settings_text, quit_text) = if language == "en" {
+        ("Show / Hide", "Settings", "Quit")
+    } else {
+        ("Göster / Gizle", "Ayarlar", "Çıkış")
+    };
+
+    if let Some(tray) = app_handle.tray_by_id("main_tray") {
+        let show_item = MenuItemBuilder::with_id("show", show_text)
+            .build(&app_handle)
+            .map_err(|e| e.to_string())?;
+        let settings_item = MenuItemBuilder::with_id("settings", settings_text)
+            .build(&app_handle)
+            .map_err(|e| e.to_string())?;
+        let quit_item = MenuItemBuilder::with_id("quit", quit_text)
+            .build(&app_handle)
+            .map_err(|e| e.to_string())?;
+
+        let tray_menu = MenuBuilder::new(&app_handle)
+            .item(&show_item)
+            .item(&settings_item)
+            .separator()
+            .item(&quit_item)
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let _ = tray.set_menu(Some(tray_menu));
+    }
+    Ok(())
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct SystemContext {
     pub os_name: String,
@@ -733,7 +765,7 @@ pub fn run() {
                 .item(&quit_item)
                 .build()?;
 
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id("main_tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&tray_menu)
                 .tooltip("CoreType — Ctrl+Space")
@@ -760,9 +792,9 @@ pub fn run() {
                                 "settings",
                                 tauri::WebviewUrl::App("/?page=settings".into()),
                             )
-                            .title("CoreType — Ayarlar")
+                            .title("CoreType Settings")
                             .inner_size(900.0, 1000.0)
-                            .resizable(false)
+                            .resizable(true)
                             .decorations(false)
                             .transparent(true)
                             .always_on_top(true)
@@ -779,7 +811,7 @@ pub fn run() {
                             }
                         }
                         "quit" => {
-                            app.exit(0);
+                            std::process::exit(0);
                         }
                         _ => {}
                     }
@@ -798,7 +830,8 @@ pub fn run() {
             get_secret,
             get_display_scale,
             resize_window,
-            get_system_context
+            get_system_context,
+            update_tray_language
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

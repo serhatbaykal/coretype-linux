@@ -4,7 +4,17 @@
 
 ---
 
-## 📌 [2026-09-17 08:03] - Ayarlar Penceresi Açılışındaki Siyah Ekran (Flash) Sorununun Çözümü
+## 📌 [2026-09-17 16:47] - Git Sürüm Kontrolü ve Güvenli .gitignore Entegrasyonu
+- **Kapsam / Modül:** DevOps, Sürüm Kontrol Sistemi (Git), Güvenlik & Gizlilik
+- **Yapılan İşlemin Özeti:**
+  1. **Kapsamlı .gitignore Oluşturuldu:** Yüksek güvenlik standartlarıyla `.env`, `secrets.json`, `*.key`, `*.pem`, `konsol.txt`, `node_modules/`, `src-tauri/target/`, `dist/` ve yerel IDE/agent önbellekleri Git kapsamından hariç tutuldu.
+  2. **Git Deposu İlklendirildi:** `git init` ve `git branch -M main` ile ana dal oluşturuldu.
+  3. **Baseline Commit:** Sürüm `0.1.0` temel alınarak tüm stabil Wayland Linux CoreType kod tabanı ilk commit (`feat: initial commit - coretype linux v0.1.0 baseline`) olarak mühürlendi.
+- **Etkilenen Dosyalar ve Satır Referansları:**
+  - 📄 `.gitignore : 1-48` - (Kapsamlı filtreleme kuralları)
+- **Eklenen / Silinen Paketler:** Yok
+
+---
 - **Kapsam / Modül:** React UI (`src/App.tsx`), Rust Backend (`src-tauri/src/lib.rs`), Pencere Yaşam Döngüsü
 - **Yapılan İşlemin Özeti:**
   1. **Başlangıç Görünürlüğü (Zero Flash):** Hem React (`openSettings`) hem de Rust backend (`tray settings`) tarafında ayarlar penceresi `visible: false` olarak başlatıldı.

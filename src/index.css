@@ -501,14 +501,16 @@ svg {
 
 /* Left Sidebar */
 .settings-sidebar {
-  width: 220px;
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
+  flex: 0 0 200px;
   background: rgba(14, 18, 28, 0.95);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 14px 10px;
-  flex-shrink: 0;
+  padding: 16px 12px;
 }
 
 .settings-nav-list {
@@ -521,9 +523,9 @@ svg {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 9px 12px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
   background: transparent;
@@ -556,7 +558,7 @@ svg {
 }
 
 .settings-sidebar-footer {
-  padding: 8px 12px;
+  padding: 10px 12px;
   font-size: 11px;
   color: var(--text-muted);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
@@ -578,49 +580,49 @@ svg {
 .settings-tab-pane {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px;
+  padding: 24px 32px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
 .settings-tab-pane::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
 }
 .settings-tab-pane::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 4px;
 }
 
 /* Pane Header */
 .settings-pane-header {
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 .settings-pane-title {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
 .settings-pane-subtitle {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   line-height: 1.4;
 }
 
 /* Settings Cards */
 .settings-card {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.025);
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  padding: 14px 16px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .settings-card-header {
@@ -630,13 +632,13 @@ svg {
 }
 
 .settings-card-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .settings-card-desc {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
@@ -645,27 +647,28 @@ svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 4px 0;
+  gap: 24px;
+  padding: 6px 0;
 }
 
 .settings-item-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   flex: 1;
+  min-width: 0;
 }
 
 .settings-item-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .settings-item-desc {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 /* Password Input with Show/Hide */
@@ -703,7 +706,7 @@ svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
+  padding: 14px 28px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(14, 18, 28, 0.98);
   flex-shrink: 0;
@@ -722,7 +725,7 @@ svg {
 .settings-footer-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* Snippets Manager */
@@ -730,7 +733,7 @@ svg {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 240px;
+  max-height: 280px;
   overflow-y: auto;
 }
 
@@ -738,25 +741,25 @@ svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  gap: 12px;
+  border-radius: 8px;
+  gap: 14px;
 }
 
 .snippet-card-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--accent-color);
   background: var(--accent-glow);
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 3px 10px;
+  border-radius: 5px;
   flex-shrink: 0;
 }
 
 .snippet-card-text {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -769,8 +772,8 @@ svg {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
+  padding: 6px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   transition: all 0.15s ease;
@@ -783,46 +786,76 @@ svg {
 
 .snippet-add-form {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.snippet-inputs-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.snippet-input-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.snippet-input-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.snippet-actions-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Shortcut List */
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: center;
 }
 
-/* Shortcut Cards */
-.shortcut-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.shortcut-card {
+.shortcut-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: 12px 18px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border-color);
   border-radius: 8px;
+  transition: background 0.15s ease;
 }
 
-.shortcut-card-keys {
+.shortcut-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.shortcut-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.shortcut-keys {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.shortcut-card-keys kbd {
+.shortcut-keys kbd {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
+  padding: 3px 8px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
-}
-
-.shortcut-card-desc {
-  font-size: 11px;
-  color: var(--text-secondary);
+  font-family: var(--font-family);
 }
 
 .settings-section {

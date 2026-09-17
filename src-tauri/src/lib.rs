@@ -781,8 +781,9 @@ pub fn run() {
                                     let scale = monitor.scale_factor();
                                     let size = monitor.size().to_logical::<f64>(scale);
                                     let pos = monitor.position().to_logical::<f64>(scale);
-                                    let tx = pos.x + (size.width - 840.0) / 2.0;
-                                    let ty = pos.y + (size.height - 620.0) / 2.0;
+                                    let tx = pos.x + (size.width - 1000.0) / 2.0;
+                                    let ty = pos.y + (size.height - 900.0) / 2.0;
+                                    let _ = existing.set_size(tauri::Size::Logical(tauri::LogicalSize { width: 1000.0, height: 900.0 }));
                                     let _ = existing.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: tx, y: ty }));
                                 }
                                 let _ = existing.show();
@@ -793,7 +794,7 @@ pub fn run() {
                                 tauri::WebviewUrl::App("/?page=settings".into()),
                             )
                             .title("CoreType Settings")
-                            .inner_size(840.0, 620.0)
+                            .inner_size(1000.0, 900.0)
                             .resizable(true)
                             .decorations(false)
                             .transparent(true)
@@ -804,8 +805,8 @@ pub fn run() {
                                     let scale = monitor.scale_factor();
                                     let size = monitor.size().to_logical::<f64>(scale);
                                     let pos = monitor.position().to_logical::<f64>(scale);
-                                    let tx = pos.x + (size.width - 840.0) / 2.0;
-                                    let ty = pos.y + (size.height - 620.0) / 2.0;
+                                    let tx = pos.x + (size.width - 1000.0) / 2.0;
+                                    let ty = pos.y + (size.height - 900.0) / 2.0;
                                     let _ = new_win.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: tx, y: ty }));
                                 }
                             }

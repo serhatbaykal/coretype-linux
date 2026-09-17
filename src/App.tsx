@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   resolveLanguage,
@@ -258,6 +259,8 @@ function SettingsView() {
     const appWin = getCurrentWindow();
     const timer = setTimeout(async () => {
       try {
+        await appWin.setSize(new LogicalSize(1000, 900));
+        await appWin.center();
         await appWin.show();
         await appWin.setFocus();
       } catch (e) {
@@ -882,35 +885,43 @@ function SettingsView() {
                 <div className="settings-card">
                   <span className="settings-card-title">{t.settings.snippets.addBtn}</span>
                   <div className="snippet-add-form">
-                    <input
-                      type="text"
-                      className="settings-input"
-                      style={{ width: "160px" }}
-                      placeholder={t.settings.snippets.prefixLabel}
-                      value={newSnippetName}
-                      onChange={(e) => setNewSnippetName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
-                    />
-                    <input
-                      type="text"
-                      className="settings-input"
-                      style={{ flex: 1 }}
-                      placeholder={t.settings.snippets.contentLabel}
-                      value={newSnippetText}
-                      onChange={(e) => setNewSnippetText(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={!newSnippetName.trim() || !newSnippetText.trim()}
-                      onClick={() => {
-                        saveSnippet(newSnippetName.trim(), newSnippetText.trim());
-                        setSnippets(loadSnippets());
-                        setNewSnippetName("");
-                        setNewSnippetText("");
-                      }}
-                    >
-                      {t.settings.snippets.addBtn}
-                    </button>
+                    <div className="snippet-inputs-row">
+                      <div className="snippet-input-group" style={{ width: "220px" }}>
+                        <span className="snippet-input-label">{t.settings.snippets.prefixLabel}</span>
+                        <input
+                          type="text"
+                          className="settings-input"
+                          placeholder="imza"
+                          value={newSnippetName}
+                          onChange={(e) => setNewSnippetName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
+                        />
+                      </div>
+                      <div className="snippet-input-group" style={{ flex: 1 }}>
+                        <span className="snippet-input-label">{t.settings.snippets.contentLabel}</span>
+                        <input
+                          type="text"
+                          className="settings-input"
+                          placeholder={t.settings.snippets.contentLabel}
+                          value={newSnippetText}
+                          onChange={(e) => setNewSnippetText(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="snippet-actions-row">
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={!newSnippetName.trim() || !newSnippetText.trim()}
+                        onClick={() => {
+                          saveSnippet(newSnippetName.trim(), newSnippetText.trim());
+                          setSnippets(loadSnippets());
+                          setNewSnippetName("");
+                          setNewSnippetText("");
+                        }}
+                      >
+                        {t.settings.snippets.addBtn}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -954,42 +965,42 @@ function SettingsView() {
                   <p className="settings-pane-subtitle">{t.settings.shortcuts.globalToggleDesc}</p>
                 </div>
 
-                <div className="shortcut-grid">
-                  <div className="shortcut-card">
-                    <div className="shortcut-card-keys">
+                <div className="shortcut-list">
+                  <div className="shortcut-row">
+                    <span className="shortcut-label">{t.settings.shortcuts.globalToggle}</span>
+                    <div className="shortcut-keys">
                       <kbd>Ctrl</kbd> + <kbd>Space</kbd>
                     </div>
-                    <span className="shortcut-card-desc">{t.settings.shortcuts.globalToggle}</span>
                   </div>
-                  <div className="shortcut-card">
-                    <div className="shortcut-card-keys">
+                  <div className="shortcut-row">
+                    <span className="shortcut-label">{t.historyVault.title}</span>
+                    <div className="shortcut-keys">
                       <kbd>Ctrl</kbd> + <kbd>H</kbd>
                     </div>
-                    <span className="shortcut-card-desc">{t.historyVault.title}</span>
                   </div>
-                  <div className="shortcut-card">
-                    <div className="shortcut-card-keys">
+                  <div className="shortcut-row">
+                    <span className="shortcut-label">{t.settings.shortcuts.hideWindow}</span>
+                    <div className="shortcut-keys">
                       <kbd>Esc</kbd>
                     </div>
-                    <span className="shortcut-card-desc">{t.settings.shortcuts.hideWindow}</span>
                   </div>
-                  <div className="shortcut-card">
-                    <div className="shortcut-card-keys">
+                  <div className="shortcut-row">
+                    <span className="shortcut-label">{t.settings.shortcuts.submitPrompt}</span>
+                    <div className="shortcut-keys">
                       <kbd>Enter</kbd>
                     </div>
-                    <span className="shortcut-card-desc">{t.settings.shortcuts.submitPrompt}</span>
                   </div>
-                  <div className="shortcut-card">
-                    <div className="shortcut-card-keys">
+                  <div className="shortcut-row">
+                    <span className="shortcut-label">{currentLang === "tr" ? "Hızlı AI Komutları" : "Quick AI Commands"}</span>
+                    <div className="shortcut-keys">
                       <kbd>Ctrl</kbd> + <kbd>1-9</kbd>
                     </div>
-                    <span className="shortcut-card-desc">{currentLang === "tr" ? "Hızlı AI Komutları" : "Quick AI Commands"}</span>
                   </div>
-                  <div className="shortcut-card">
-                    <div className="shortcut-card-keys">
+                  <div className="shortcut-row">
+                    <span className="shortcut-label">{currentLang === "tr" ? "Slash Menüsü & Snippet Tetikleme" : "Slash Menu & Snippets"}</span>
+                    <div className="shortcut-keys">
                       <kbd>/</kbd>
                     </div>
-                    <span className="shortcut-card-desc">{currentLang === "tr" ? "Slash Menüsü & Snippet" : "Slash Menu & Snippets"}</span>
                   </div>
                 </div>
               </>
@@ -1577,9 +1588,9 @@ function MainView() {
     new WebviewWindow("settings", {
       url: "/?page=settings",
       title: `CoreType — ${t.settings.windowTitle}`,
-      width: 840,
-      height: 620,
-      resizable: false,
+      width: 1000,
+      height: 900,
+      resizable: true,
       decorations: false,
       transparent: true,
       center: true,

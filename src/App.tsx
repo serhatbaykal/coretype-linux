@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { listen } from "@tauri-apps/api/event";
 import {
   resolveLanguage,
   getTranslation,
@@ -258,14 +259,10 @@ function SettingsView() {
     applyTheme(tempSettings);
     const appWin = getCurrentWindow();
     const timer = setTimeout(async () => {
-      try {
-        await appWin.setSize(new LogicalSize(1000, 900));
-        await appWin.center();
-        await appWin.show();
-        await appWin.setFocus();
-      } catch (e) {
-        console.error("Failed to show settings window:", e);
-      }
+      try { await appWin.setSize(new LogicalSize(1000, 900)); } catch (e) { console.error("setSize failed:", e); }
+      try { await appWin.center(); } catch (e) { console.error("center failed:", e); }
+      try { await appWin.show(); } catch (e) { console.error("show failed:", e); }
+      try { await appWin.setFocus(); } catch (e) { console.error("setFocus failed:", e); }
     }, 50);
     return () => clearTimeout(timer);
   }, []);
@@ -1139,6 +1136,10 @@ function MainView() {
   // History Vault
   const [historyVault, setHistoryVault] = useState<HistoryEntry[]>(loadHistoryVault);
   const [showHistoryVault, setShowHistoryVault] = useState(false);
+  const showHistoryVaultRef = useRef(false);
+  useEffect(() => {
+    showHistoryVaultRef.current = showHistoryVault;
+  }, [showHistoryVault]);
   const [vaultFilter, setVaultFilter] = useState("");
   const [vaultActiveIdx, setVaultActiveIdx] = useState(0);
   const vaultInputRef = useRef<HTMLInputElement>(null);
@@ -1209,6 +1210,7 @@ function MainView() {
   const glowTimerRef = useRef<number | null>(null);
 
   const openHistoryVault = useCallback(() => {
+    showHistoryVaultRef.current = true;
     setShowSlashMenu(false);
     resizeForSlash(0);
     setVaultFilter("");
@@ -1219,18 +1221,19 @@ function MainView() {
   }, [resizeForSlash, applyWindowHeight]);
 
   const closeHistoryVault = useCallback(() => {
+    showHistoryVaultRef.current = false;
     setShowHistoryVault(false);
     applyWindowHeight(getBaseHeight());
     setTimeout(() => inputRef.current?.focus(), 50);
   }, [getBaseHeight, applyWindowHeight]);
 
   const toggleHistoryVault = useCallback(() => {
-    if (showHistoryVault) {
+    if (showHistoryVaultRef.current) {
       closeHistoryVault();
     } else {
       openHistoryVault();
     }
-  }, [showHistoryVault, closeHistoryVault, openHistoryVault]);
+  }, [closeHistoryVault, openHistoryVault]);
 
   // Typewriter placeholder hints
   const placeholderHints = t.spotlight.placeholderHints;
@@ -1325,41 +1328,46 @@ function MainView() {
         loadSecrets().then((secrets) => {
           setSettings({ ...newSettings, ...secrets });
         });
-        setPrompt("");
-        setHistoryIndex(-1);
-        setShowHistoryVault(false);
-        setVaultFilter("");
+        // Do not disrupt History Vault if it is already open!
+        if (!showHistoryVaultRef.current) {
+          setPrompt("");
+          setHistoryIndex(-1);
+          setShowHistoryVault(false);
+          setVaultFilter("");
 
-        // Refresh system context from target window
-        invoke<SystemContext>("get_system_context").then(setSysContext).catch(() => {});
+          // Refresh system context from target window
+          invoke<SystemContext>("get_system_context").then(setSysContext).catch(() => {});
 
-        // Capture selected text from target window
-        invoke<string>("get_selected_text").then((text) => {
-          setSelectedText(text || "");
-          // Don't resize if preview panel is open
-          setPreviewData((prev) => {
-            if (prev) return prev; // keep preview size
-            const h = text ? SELECTION_HEIGHT : BASE_HEIGHT;
-            applyWindowHeight(h);
-            return null;
+          // Capture selected text from target window
+          invoke<string>("get_selected_text").then((text) => {
+            setSelectedText(text || "");
+            // Don't resize if preview panel is open
+            setPreviewData((prev) => {
+              if (prev) return prev; // keep preview size
+              const h = text ? SELECTION_HEIGHT : BASE_HEIGHT;
+              applyWindowHeight(h);
+              return null;
+            });
+          }).catch(() => {
+            setSelectedText("");
+            setPreviewData((prev) => {
+              if (prev) return prev;
+              applyWindowHeight(BASE_HEIGHT);
+              return null;
+            });
           });
-        }).catch(() => {
-          setSelectedText("");
-          setPreviewData((prev) => {
-            if (prev) return prev;
-            applyWindowHeight(BASE_HEIGHT);
-            return null;
-          });
-        });
 
-        // Reset textarea height
-        if (inputRef.current) inputRef.current.style.height = "auto";
-        setTimeout(() => inputRef.current?.focus(), 50);
+          // Reset textarea height
+          if (inputRef.current) inputRef.current.style.height = "auto";
+          setTimeout(() => inputRef.current?.focus(), 50);
+        }
       } else {
         // Skip if window has not been focused yet, or if opening settings window
         if (!hasBeenFocusedRef.current) return;
         hasBeenFocusedRef.current = false;
         if (isOpeningSettingsRef.current) return;
+        // Never auto-close on blur when user is viewing or searching the History Vault!
+        if (showHistoryVaultRef.current) return;
 
         // Skip if window is not even visible
         try {
@@ -1373,13 +1381,6 @@ function MainView() {
         const currentSettings = loadSettings();
         if (currentSettings.autoCloseOnBlur && !isDroppingRef.current) {
           isDroppingRef.current = true;
-
-          // Close settings window if open
-          WebviewWindow.getByLabel("settings").then(async (settingsWin) => {
-            if (settingsWin) {
-              try { await settingsWin.close(); } catch {}
-            }
-          });
 
           // Animate window dropping off screen
           appWindow.outerPosition().then((pos) => {
@@ -1494,6 +1495,11 @@ function MainView() {
       closeHistoryVault();
       return;
     }
+    if ((e.ctrlKey || e.metaKey) && (e.key === "h" || e.key === "H" || e.code === "KeyH")) {
+      e.preventDefault();
+      closeHistoryVault();
+      return;
+    }
     if (items.length === 0) return;
 
     if (e.key === "ArrowDown") {
@@ -1554,12 +1560,30 @@ function MainView() {
   }, [previewData, settings.injectionMethod, settings.typingSpeed, t.spotlight.statusIdle, t.spotlight.statusError]);
 
   useEffect(() => {
+    let unlistenToggle: (() => void) | undefined;
+    let unlistenOpen: (() => void) | undefined;
+
+    listen("toggle_history_vault", () => {
+      toggleHistoryVault();
+    }).then(fn => { unlistenToggle = fn; });
+
+    listen("open_history_vault", () => {
+      openHistoryVault();
+    }).then(fn => { unlistenOpen = fn; });
+
+    return () => {
+      unlistenToggle?.();
+      unlistenOpen?.();
+    };
+  }, [toggleHistoryVault, openHistoryVault]);
+
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         handleEscape();
       }
-      if ((e.ctrlKey || e.metaKey) && (e.key === "h" || e.key === "H")) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "h" || e.key === "H" || e.code === "KeyH")) {
         e.preventDefault();
         toggleHistoryVault();
       }
@@ -1576,27 +1600,32 @@ function MainView() {
 
   const openSettings = async () => {
     isOpeningSettingsRef.current = true;
-    setTimeout(() => { isOpeningSettingsRef.current = false; }, 500);
+    setTimeout(() => { isOpeningSettingsRef.current = false; }, 1000);
 
-    // Check if settings window already exists
-    const existing = await WebviewWindow.getByLabel("settings");
-    if (existing) {
-      await existing.setFocus();
-      return;
+    try {
+      await invoke("open_settings_window");
+    } catch (err) {
+      console.error("open_settings_window IPC failed, falling back to WebviewWindow:", err);
+      const existing = await WebviewWindow.getByLabel("settings");
+      if (existing) {
+        await existing.show();
+        await existing.setFocus();
+        return;
+      }
+
+      new WebviewWindow("settings", {
+        url: "/?page=settings",
+        title: `CoreType — ${t.settings.windowTitle}`,
+        width: 1000,
+        height: 900,
+        resizable: true,
+        decorations: false,
+        transparent: true,
+        center: true,
+        alwaysOnTop: true,
+        visible: true,
+      });
     }
-
-    new WebviewWindow("settings", {
-      url: "/?page=settings",
-      title: `CoreType — ${t.settings.windowTitle}`,
-      width: 1000,
-      height: 900,
-      resizable: true,
-      decorations: false,
-      transparent: true,
-      center: true,
-      alwaysOnTop: true,
-      visible: false,
-    });
   };
 
   // Local text transforms (no AI)
@@ -1797,7 +1826,12 @@ function MainView() {
     const { cmd: matchedCmd, arg: cmdArg } = findMatchedSlashCommand(slashCommands, trimmed);
 
     // History vault slash command
-    if (matchedCmd && (matchedCmd.id === "gecmis" || matchedCmd.trigger === "/geçmiş" || matchedCmd.trigger === "/history")) {
+    const norm = trimmed.toLowerCase();
+    if (
+      (matchedCmd && (matchedCmd.id === "gecmis" || matchedCmd.trigger === "/geçmiş" || matchedCmd.trigger === "/history")) ||
+      norm === "/geçmiş" || norm === "/gecmis" || norm === "/history" ||
+      trimmed.toLocaleLowerCase("tr") === "/geçmiş"
+    ) {
       setPrompt("");
       openHistoryVault();
       return;
@@ -2345,7 +2379,7 @@ function MainView() {
               }}
               onKeyDown={(e) => {
                 // Toggle history vault
-                if ((e.ctrlKey || e.metaKey) && (e.key === "h" || e.key === "H")) {
+                if ((e.ctrlKey || e.metaKey) && (e.key === "h" || e.key === "H" || e.code === "KeyH")) {
                   e.preventDefault();
                   toggleHistoryVault();
                   return;

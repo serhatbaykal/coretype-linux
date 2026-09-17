@@ -58,7 +58,9 @@ export const tr: TranslationSchema = {
     windowSubtitle: "Genel tercihler, modeller ve sistem entegrasyonu",
     tabs: {
       general: "Genel",
-      models: "AI Sağlayıcı",
+      models: "Model & API",
+      appearance: "Görünüm & Tema",
+      history: "Geçmiş Kasası",
       shortcuts: "Kısayollar",
       snippets: "Snippet'lar",
       about: "Hakkında",

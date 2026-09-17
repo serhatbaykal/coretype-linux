@@ -191,9 +191,11 @@ function formatRelativeTime(timestamp: number, lang: "tr" | "en"): string {
 }
 
 // ─── Settings Window Component ───
+type SettingsTabId = "general" | "models" | "appearance" | "history" | "snippets" | "shortcuts" | "about";
 
 function SettingsView() {
   const [tempSettings, setTempSettings] = useState<AppSettings>(loadSettings);
+  const [activeTab, setActiveTab] = useState<SettingsTabId>("general");
   const [autoStart, setAutoStart] = useState(false);
   const [injectionMenuOpen, setInjectionMenuOpen] = useState(false);
   const [langMenuOpen, setLangMenuOpen] = useState(false);
@@ -204,6 +206,17 @@ function SettingsView() {
   const t = getTranslation(currentLang);
   const [historyCount, setHistoryCount] = useState(() => loadHistoryVault().length);
   const [historyClearedToast, setHistoryClearedToast] = useState(false);
+
+  // Key show/hide states
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showOpenAIKey, setShowOpenAIKey] = useState(false);
+  const [savedToast, setSavedToast] = useState(false);
+
+  // Snippets state
+  const [snippets, setSnippets] = useState<Snippet[]>(loadSnippets);
+  const [newSnippetName, setNewSnippetName] = useState("");
+  const [newSnippetText, setNewSnippetText] = useState("");
+  const [copiedSysInfo, setCopiedSysInfo] = useState(false);
 
   const injectionOptions = [
     { value: "hybrid" as const, label: t.settings.general.methodHybrid, desc: t.settings.general.methodHybridDesc },
@@ -239,7 +252,7 @@ function SettingsView() {
     invoke<boolean>("plugin:autostart|is_enabled").then(setAutoStart).catch(() => { });
   }, []);
 
-  // Show window smoothly once mounted and painted, eliminating any black flash
+  // Show window smoothly once mounted and painted
   useEffect(() => {
     applyTheme(tempSettings);
     const appWin = getCurrentWindow();
@@ -255,19 +268,19 @@ function SettingsView() {
   }, []);
 
   const handleSave = async () => {
-    // Save secrets to OS Credential Manager
     await saveSecrets(tempSettings);
-    // Save non-secret settings to localStorage (strip secrets)
     const safeSettings = { ...tempSettings };
     for (const k of SECRET_KEYS) (safeSettings as any)[k] = "";
     localStorage.setItem("coretype_settings", JSON.stringify(safeSettings));
     applyTheme(tempSettings);
 
-    // Sync language with Rust backend tray menu
     const resolvedLang = resolveLanguage(tempSettings.language);
     await invoke("update_tray_language", { language: resolvedLang }).catch(() => {});
 
-    getCurrentWindow().close();
+    setSavedToast(true);
+    setTimeout(() => {
+      getCurrentWindow().close();
+    }, 400);
   };
 
   const handleCancel = () => {
@@ -282,395 +295,772 @@ function SettingsView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  const tabs = [
+    {
+      id: "general" as const,
+      label: t.settings.tabs.general,
+      icon: (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      )
+    },
+    {
+      id: "models" as const,
+      label: t.settings.tabs.models,
+      icon: (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
+          <rect x="4" y="8" width="16" height="12" rx="2" />
+          <path d="M2 14h2" />
+          <path d="M20 14h2" />
+          <path d="M9 13v2" />
+          <path d="M15 13v2" />
+        </svg>
+      )
+    },
+    {
+      id: "appearance" as const,
+      label: t.settings.tabs.appearance,
+      icon: (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+          <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+          <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+          <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+        </svg>
+      )
+    },
+    {
+      id: "history" as const,
+      label: t.settings.tabs.history,
+      icon: (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <polyline points="12 6 12 12 16 14" />
+        </svg>
+      )
+    },
+    {
+      id: "snippets" as const,
+      label: t.settings.tabs.snippets,
+      icon: (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+          <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+          <path d="M9 14l2 2 4-4" />
+        </svg>
+      )
+    },
+    {
+      id: "shortcuts" as const,
+      label: t.settings.tabs.shortcuts,
+      icon: (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="4" width="20" height="16" rx="2" />
+          <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10" />
+        </svg>
+      )
+    },
+    {
+      id: "about" as const,
+      label: t.settings.tabs.about,
+      icon: (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="16" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+      )
+    }
+  ];
+
   return (
     <div className="coretype-app settings-window">
-      <div className="settings-panel">
-        <div className="settings-header">
-          <div className="settings-title">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-            {t.settings.windowTitle}
-          </div>
-          <button className="settings-close" onClick={handleCancel}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
+      {/* Top Window Bar */}
+      <div className="settings-topbar" data-tauri-drag-region>
+        <div className="settings-brand">
+          <div className="settings-brand-icon" />
+          <span className="settings-brand-title">CoreType — {t.settings.windowTitle}</span>
         </div>
+        <button type="button" className="settings-close-btn" onClick={handleCancel} title={t.settings.common.close}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
 
-        {/* AI Provider Section */}
-        <div className="settings-section">
-          <span className="section-label">{t.settings.models.providerLabel}</span>
-          <div className="provider-pills">
-            {([
-              { id: "gemini", label: "Gemini" },
-              { id: "openai", label: "OpenAI" },
-              { id: "ollama", label: "Ollama" },
-            ] as const).map((p) => (
+      {/* Settings Layout: Sidebar + Content */}
+      <div className="settings-layout">
+        {/* Left Sidebar */}
+        <div className="settings-sidebar">
+          <div className="settings-nav-list">
+            {tabs.map((tab) => (
               <button
-                key={p.id}
-                className={`provider-pill ${tempSettings.provider === p.id ? "active" : ""}`}
-                onClick={() => setTempSettings({ ...tempSettings, provider: p.id })}
+                key={tab.id}
+                type="button"
+                className={`settings-nav-item ${activeTab === tab.id ? "active" : ""}`}
+                onClick={() => setActiveTab(tab.id)}
               >
-                <span className="pill-dot" />
-                {p.label}
+                <span className="settings-nav-icon">{tab.icon}</span>
+                <span>{tab.label}</span>
               </button>
             ))}
           </div>
-        </div>
-
-        {/* Provider Config */}
-        {tempSettings.provider === "gemini" && (
-          <div className="provider-config">
-            <div className="settings-group">
-              <label className="settings-label">{t.settings.models.geminiKeyLabel}</label>
-              <input
-                type="password"
-                className="settings-input"
-                value={tempSettings.geminiKey}
-                onChange={(e) => setTempSettings({ ...tempSettings, geminiKey: e.target.value })}
-                placeholder="AIzaSy..."
-              />
-            </div>
-          </div>
-        )}
-
-        {tempSettings.provider === "openai" && (
-          <div className="provider-config">
-            <div className="settings-group">
-              <label className="settings-label">{t.settings.models.openaiKeyLabel}</label>
-              <input
-                type="password"
-                className="settings-input"
-                value={tempSettings.openaiKey}
-                onChange={(e) => setTempSettings({ ...tempSettings, openaiKey: e.target.value })}
-                placeholder="sk-..."
-              />
-            </div>
-          </div>
-        )}
-
-        {tempSettings.provider === "ollama" && (
-          <div className="provider-config">
-            <div className="settings-row">
-              <div className="settings-group">
-                <label className="settings-label">{t.settings.models.ollamaUrlLabel}</label>
-                <input
-                  type="text"
-                  className="settings-input"
-                  value={tempSettings.ollamaUrl}
-                  onChange={(e) => setTempSettings({ ...tempSettings, ollamaUrl: e.target.value })}
-                  placeholder="http://localhost:11434"
-                />
-              </div>
-              <div className="settings-group">
-                <label className="settings-label">{t.settings.models.ollamaModelLabel}</label>
-                <input
-                  type="text"
-                  className="settings-input"
-                  value={tempSettings.ollamaModel}
-                  onChange={(e) => setTempSettings({ ...tempSettings, ollamaModel: e.target.value })}
-                  placeholder="llama3"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Language Section */}
-        <div className="settings-section">
-          <span className="section-label">{t.settings.general.languageLabel}</span>
-          <div className="settings-row">
-            <div className="settings-group">
-              <label className="settings-label">{t.settings.general.languageDesc}</label>
-              <div className="custom-select-wrapper" ref={langRef}>
-                <button
-                  type="button"
-                  className={`custom-select-button ${langMenuOpen ? "open" : ""}`}
-                  onClick={() => setLangMenuOpen(!langMenuOpen)}
-                >
-                  <span>
-                    {languageOptions.find((m) => m.value === (tempSettings.language || "system"))?.label || t.settings.general.langSystem}
-                  </span>
-                  <svg
-                    className={`custom-select-arrow ${langMenuOpen ? "rotated" : ""}`}
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
-                {langMenuOpen && (
-                  <div className="custom-select-menu">
-                    {languageOptions.map((m) => (
-                      <div
-                        key={m.value}
-                        className={`custom-select-item ${(tempSettings.language || "system") === m.value ? "selected" : ""}`}
-                        onClick={() => {
-                          const newLang = m.value as LanguageSetting;
-                          setTempSettings({ ...tempSettings, language: newLang });
-                          setLangMenuOpen(false);
-                          const resolved = resolveLanguage(newLang);
-                          invoke("update_tray_language", { language: resolved }).catch(() => {});
-                        }}
-                      >
-                        <div className="custom-select-item-text">
-                          <span className="custom-select-item-label">{m.label}</span>
-                        </div>
-                        {(tempSettings.language || "system") === m.value && (
-                          <svg className="custom-select-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+          <div className="settings-sidebar-footer">
+            <span>CoreType v0.1.0</span>
+            <span style={{ opacity: 0.5 }}>Linux</span>
           </div>
         </div>
 
-        {/* Writing Settings Section */}
-        <div className="settings-section">
-          <span className="section-label">{t.settings.general.injectionLabel}</span>
-          <div className="settings-row">
-            <div className="settings-group">
-              <label className="settings-label">{t.settings.general.injectionDesc}</label>
-              <div className="custom-select-wrapper" ref={injectionRef}>
-                <button
-                  type="button"
-                  className={`custom-select-button ${injectionMenuOpen ? "open" : ""}`}
-                  onClick={() => setInjectionMenuOpen(!injectionMenuOpen)}
-                >
-                  <span>
-                    {injectionOptions.find((m) => m.value === tempSettings.injectionMethod)?.label || t.settings.general.methodHybrid}
-                  </span>
-                  <svg
-                    className={`custom-select-arrow ${injectionMenuOpen ? "rotated" : ""}`}
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
-                {injectionMenuOpen && (
-                  <div className="custom-select-menu">
-                    {injectionOptions.map((m) => (
-                      <div
-                        key={m.value}
-                        className={`custom-select-item ${tempSettings.injectionMethod === m.value ? "selected" : ""}`}
-                        onClick={() => {
-                          setTempSettings({ ...tempSettings, injectionMethod: m.value });
-                          setInjectionMenuOpen(false);
-                        }}
-                      >
-                        <div className="custom-select-item-text">
-                          <span className="custom-select-item-label">{m.label}</span>
-                          <span className="custom-select-item-desc">{m.desc}</span>
-                        </div>
-                        {tempSettings.injectionMethod === m.value && (
-                          <svg className="custom-select-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="settings-group">
-              <label className="settings-label">{t.settings.general.typingSpeedLabel}</label>
-              <div className="settings-number-stepper">
-                <input
-                  type="number"
-                  className="settings-input settings-number-input"
-                  value={tempSettings.typingSpeed}
-                  onChange={(e) => setTempSettings({ ...tempSettings, typingSpeed: Math.max(1, Number(e.target.value)) })}
-                  disabled={tempSettings.injectionMethod === "paste"}
-                  min={1}
-                />
-                <div className="stepper-controls">
-                  <button
-                    type="button"
-                    className="stepper-btn"
-                    onClick={() => setTempSettings(prev => ({ ...prev, typingSpeed: Number(prev.typingSpeed || 1) + 1 }))}
-                    disabled={tempSettings.injectionMethod === "paste"}
-                    tabIndex={-1}
-                    title="Artır"
-                  >
-                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="18 15 12 9 6 15" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="stepper-btn"
-                    onClick={() => setTempSettings(prev => ({ ...prev, typingSpeed: Math.max(1, Number(prev.typingSpeed || 1) - 1) }))}
-                    disabled={tempSettings.injectionMethod === "paste" || Number(tempSettings.typingSpeed) <= 1}
-                    tabIndex={-1}
-                    title="Azalt"
-                  >
-                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </button>
+        {/* Right Content Area */}
+        <div className="settings-content-area">
+          <div className="settings-tab-pane">
+            {/* 1. GENEL SEKMESİ (EN ÜSTTE) */}
+            {activeTab === "general" && (
+              <>
+                <div className="settings-pane-header">
+                  <h2 className="settings-pane-title">{t.settings.tabs.general}</h2>
+                  <p className="settings-pane-subtitle">{t.settings.windowSubtitle}</p>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* System Section */}
-        <div className="settings-section">
-          <span className="section-label">{t.settings.tabs.general}</span>
-          <div className="settings-row settings-system-row">
-            <div className="settings-group">
-              <label className="settings-label">{t.settings.general.autostartLabel}</label>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={autoStart}
-                  onChange={async (e) => {
-                    const enabled = e.target.checked;
-                    try {
-                      if (enabled) {
-                        await invoke("plugin:autostart|enable");
-                      } else {
-                        await invoke("plugin:autostart|disable");
-                      }
-                      setAutoStart(enabled);
-                    } catch (err) {
-                      console.error("Autostart error:", err);
-                    }
-                  }}
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="settings-group">
-              <label className="settings-label">{t.settings.general.previewModeLabel}</label>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={tempSettings.previewMode}
-                  onChange={(e) => setTempSettings({ ...tempSettings, previewMode: e.target.checked })}
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="settings-group">
-              <label className="settings-label">{t.settings.general.autoCloseLabel}</label>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={tempSettings.autoCloseOnBlur}
-                  onChange={(e) => setTempSettings({ ...tempSettings, autoCloseOnBlur: e.target.checked })}
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-          </div>
-        </div>
+                {/* Dil Seçimi */}
+                <div className="settings-card">
+                  <div className="settings-item-row">
+                    <div className="settings-item-info">
+                      <span className="settings-item-title">{t.settings.general.languageLabel}</span>
+                      <span className="settings-item-desc">{t.settings.general.languageDesc}</span>
+                    </div>
+                    <div className="custom-select-wrapper" ref={langRef} style={{ width: "200px" }}>
+                      <button
+                        type="button"
+                        className={`custom-select-button ${langMenuOpen ? "open" : ""}`}
+                        onClick={() => setLangMenuOpen(!langMenuOpen)}
+                      >
+                        <span>
+                          {languageOptions.find((l) => l.value === (tempSettings.language || "system"))?.label || t.settings.general.langSystem}
+                        </span>
+                        <svg
+                          className={`custom-select-arrow ${langMenuOpen ? "rotated" : ""}`}
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      {langMenuOpen && (
+                        <div className="custom-select-menu">
+                          {languageOptions.map((l) => (
+                            <div
+                              key={l.value}
+                              className={`custom-select-item ${(tempSettings.language || "system") === l.value ? "selected" : ""}`}
+                              onClick={() => {
+                                const newL = l.value;
+                                setTempSettings({ ...tempSettings, language: newL });
+                                setLangMenuOpen(false);
+                                const resolved = resolveLanguage(newL);
+                                invoke("update_tray_language", { language: resolved }).catch(() => {});
+                              }}
+                            >
+                              <div className="custom-select-item-text">
+                                <span className="custom-select-item-label">{l.label}</span>
+                              </div>
+                              {(tempSettings.language || "system") === l.value && (
+                                <svg className="custom-select-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-        {/* Theme Section */}
-        <div className="settings-section">
-          <span className="section-label">{t.settings.general.accentColorLabel}</span>
-          <div className="settings-group">
-            <label className="settings-label">{t.settings.general.accentColorDesc}</label>
-            <div className="color-presets">
-              {COLOR_PRESETS.map((p) => (
-                <div
-                  key={p.id}
-                  className={`color-dot${tempSettings.accentColor === p.color ? " active" : ""}`}
-                  style={{ background: p.color }}
-                  title={p.label}
-                  onClick={(e) => {
-                    setTempSettings({ ...tempSettings, accentColor: p.color });
-                    // Ripple effect
-                    const rect = (e.target as HTMLElement).getBoundingClientRect();
-                    const ripple = document.createElement("div");
-                    ripple.className = "theme-ripple";
-                    ripple.style.left = rect.left + rect.width / 2 + "px";
-                    ripple.style.top = rect.top + rect.height / 2 + "px";
-                    ripple.style.background = p.color;
-                    document.body.appendChild(ripple);
-                    setTimeout(() => ripple.remove(), 500);
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="settings-group" style={{ marginTop: 8 }}>
-            <label className="settings-label">{t.settings.general.opacityLabel} ({Math.round(tempSettings.opacity * 100)}%)</label>
-            <input
-              type="range"
-              className="opacity-slider"
-              min="0.3"
-              max="0.95"
-              step="0.05"
-              value={tempSettings.opacity}
-              onChange={(e) => setTempSettings({ ...tempSettings, opacity: Number(e.target.value) })}
-            />
-          </div>
-        </div>
+                {/* Yazım & Enjeksiyon */}
+                <div className="settings-card">
+                  <div className="settings-item-row">
+                    <div className="settings-item-info">
+                      <span className="settings-item-title">{t.settings.general.injectionLabel}</span>
+                      <span className="settings-item-desc">{t.settings.general.injectionDesc}</span>
+                    </div>
+                    <div className="custom-select-wrapper" ref={injectionRef} style={{ width: "200px" }}>
+                      <button
+                        type="button"
+                        className={`custom-select-button ${injectionMenuOpen ? "open" : ""}`}
+                        onClick={() => setInjectionMenuOpen(!injectionMenuOpen)}
+                      >
+                        <span>
+                          {injectionOptions.find((m) => m.value === tempSettings.injectionMethod)?.label || t.settings.general.methodHybrid}
+                        </span>
+                        <svg
+                          className={`custom-select-arrow ${injectionMenuOpen ? "rotated" : ""}`}
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      {injectionMenuOpen && (
+                        <div className="custom-select-menu">
+                          {injectionOptions.map((m) => (
+                            <div
+                              key={m.value}
+                              className={`custom-select-item ${tempSettings.injectionMethod === m.value ? "selected" : ""}`}
+                              onClick={() => {
+                                setTempSettings({ ...tempSettings, injectionMethod: m.value });
+                                setInjectionMenuOpen(false);
+                              }}
+                            >
+                              <div className="custom-select-item-text">
+                                <span className="custom-select-item-label">{m.label}</span>
+                                <span className="custom-select-item-desc">{m.desc}</span>
+                              </div>
+                              {tempSettings.injectionMethod === m.value && (
+                                <svg className="custom-select-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-        {/* History Vault Section */}
-        <div className="settings-section">
-          <span className="section-label">{t.historyVault.title}</span>
-          <div className="history-settings-card">
-            <div className="history-settings-header">
-              <div className="history-vault-title-box">
-                <span className="settings-label" style={{ fontWeight: 600 }}>
-                  {historyCount} {t.historyVault.entriesCount}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="history-clear-btn"
-                onClick={() => {
-                  clearHistoryVault();
-                  setHistoryCount(0);
-                  setHistoryClearedToast(true);
-                  setTimeout(() => setHistoryClearedToast(false), 3000);
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-                {historyClearedToast ? t.historyVault.allCleared : t.historyVault.clearHistoryBtn}
+                  <div className="settings-item-row" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "12px" }}>
+                    <div className="settings-item-info">
+                      <span className="settings-item-title">{t.settings.general.typingSpeedLabel}</span>
+                      <span className="settings-item-desc">{t.settings.general.typingSpeedDesc}</span>
+                    </div>
+                    <div className="settings-number-stepper" style={{ width: "120px" }}>
+                      <input
+                        type="number"
+                        className="settings-input settings-number-input"
+                        value={tempSettings.typingSpeed}
+                        onChange={(e) => setTempSettings({ ...tempSettings, typingSpeed: Math.max(1, Number(e.target.value)) })}
+                        disabled={tempSettings.injectionMethod === "paste"}
+                        min={1}
+                      />
+                      <div className="stepper-controls">
+                        <button
+                          type="button"
+                          className="stepper-btn"
+                          onClick={() => setTempSettings(prev => ({ ...prev, typingSpeed: Number(prev.typingSpeed || 1) + 1 }))}
+                          disabled={tempSettings.injectionMethod === "paste"}
+                          tabIndex={-1}
+                          title="Artır"
+                        >
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="18 15 12 9 6 15" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          className="stepper-btn"
+                          onClick={() => setTempSettings(prev => ({ ...prev, typingSpeed: Math.max(1, Number(prev.typingSpeed || 1) - 1) }))}
+                          disabled={tempSettings.injectionMethod === "paste" || Number(tempSettings.typingSpeed) <= 1}
+                          tabIndex={-1}
+                          title="Azalt"
+                        >
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sistem Davranışları */}
+                <div className="settings-card">
+                  <div className="settings-card-header">
+                    <span className="settings-card-title">{currentLang === "tr" ? "Sistem Davranışları" : "System Behaviors"}</span>
+                  </div>
+
+                  <div className="settings-item-row">
+                    <div className="settings-item-info">
+                      <span className="settings-item-title">{t.settings.general.autostartLabel}</span>
+                      <span className="settings-item-desc">{t.settings.general.autostartDesc}</span>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={autoStart}
+                        onChange={async (e) => {
+                          const enabled = e.target.checked;
+                          try {
+                            if (enabled) {
+                              await invoke("plugin:autostart|enable");
+                            } else {
+                              await invoke("plugin:autostart|disable");
+                            }
+                            setAutoStart(enabled);
+                          } catch (err) {
+                            console.error("Autostart error:", err);
+                          }
+                        }}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+
+                  <div className="settings-item-row" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "12px" }}>
+                    <div className="settings-item-info">
+                      <span className="settings-item-title">{t.settings.general.previewModeLabel}</span>
+                      <span className="settings-item-desc">{t.settings.general.previewModeDesc}</span>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={tempSettings.previewMode}
+                        onChange={(e) => setTempSettings({ ...tempSettings, previewMode: e.target.checked })}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+
+                  <div className="settings-item-row" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "12px" }}>
+                    <div className="settings-item-info">
+                      <span className="settings-item-title">{t.settings.general.autoCloseLabel}</span>
+                      <span className="settings-item-desc">{t.settings.general.autoCloseDesc}</span>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={tempSettings.autoCloseOnBlur}
+                        onChange={(e) => setTempSettings({ ...tempSettings, autoCloseOnBlur: e.target.checked })}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* 2. MODEL & API SEKMESİ */}
+            {activeTab === "models" && (
+              <>
+                <div className="settings-pane-header">
+                  <h2 className="settings-pane-title">{t.settings.tabs.models}</h2>
+                  <p className="settings-pane-subtitle">{t.settings.models.providerLabel}</p>
+                </div>
+
+                <div className="settings-card">
+                  <div className="settings-group">
+                    <label className="settings-label">{t.settings.models.providerLabel}</label>
+                    <div className="provider-pills">
+                      {([
+                        { id: "gemini", label: "Google Gemini" },
+                        { id: "openai", label: "OpenAI" },
+                        { id: "ollama", label: "Ollama (Yerel)" },
+                      ] as const).map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className={`provider-pill ${tempSettings.provider === p.id ? "active" : ""}`}
+                          onClick={() => setTempSettings({ ...tempSettings, provider: p.id })}
+                        >
+                          <span className="pill-dot" />
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {tempSettings.provider === "gemini" && (
+                    <div className="settings-group" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "14px" }}>
+                      <label className="settings-label">{t.settings.models.geminiKeyLabel}</label>
+                      <div className="password-input-wrapper">
+                        <input
+                          type={showGeminiKey ? "text" : "password"}
+                          className="settings-input"
+                          value={tempSettings.geminiKey}
+                          onChange={(e) => setTempSettings({ ...tempSettings, geminiKey: e.target.value })}
+                          placeholder="AIzaSy..."
+                        />
+                        <button
+                          type="button"
+                          className="password-toggle-btn"
+                          onClick={() => setShowGeminiKey(!showGeminiKey)}
+                          title={showGeminiKey ? "Gizle" : "Göster"}
+                        >
+                          {showGeminiKey ? (
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                              <line x1="1" y1="1" x2="23" y2="23" />
+                            </svg>
+                          ) : (
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      <span className="settings-item-desc" style={{ marginTop: "4px" }}>
+                        {t.settings.models.geminiKeyHelp}
+                      </span>
+                    </div>
+                  )}
+
+                  {tempSettings.provider === "openai" && (
+                    <div className="settings-group" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "14px" }}>
+                      <label className="settings-label">{t.settings.models.openaiKeyLabel}</label>
+                      <div className="password-input-wrapper">
+                        <input
+                          type={showOpenAIKey ? "text" : "password"}
+                          className="settings-input"
+                          value={tempSettings.openaiKey}
+                          onChange={(e) => setTempSettings({ ...tempSettings, openaiKey: e.target.value })}
+                          placeholder="sk-..."
+                        />
+                        <button
+                          type="button"
+                          className="password-toggle-btn"
+                          onClick={() => setShowOpenAIKey(!showOpenAIKey)}
+                          title={showOpenAIKey ? "Gizle" : "Göster"}
+                        >
+                          {showOpenAIKey ? (
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                              <line x1="1" y1="1" x2="23" y2="23" />
+                            </svg>
+                          ) : (
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      <span className="settings-item-desc" style={{ marginTop: "4px" }}>
+                        {t.settings.models.openaiKeyHelp} (Model: <code>gpt-4o-mini</code>)
+                      </span>
+                    </div>
+                  )}
+
+                  {tempSettings.provider === "ollama" && (
+                    <div className="settings-row" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "14px" }}>
+                      <div className="settings-group">
+                        <label className="settings-label">{t.settings.models.ollamaUrlLabel}</label>
+                        <input
+                          type="text"
+                          className="settings-input"
+                          value={tempSettings.ollamaUrl}
+                          onChange={(e) => setTempSettings({ ...tempSettings, ollamaUrl: e.target.value })}
+                          placeholder="http://localhost:11434"
+                        />
+                      </div>
+                      <div className="settings-group">
+                        <label className="settings-label">{t.settings.models.ollamaModelLabel}</label>
+                        <input
+                          type="text"
+                          className="settings-input"
+                          value={tempSettings.ollamaModel}
+                          onChange={(e) => setTempSettings({ ...tempSettings, ollamaModel: e.target.value })}
+                          placeholder="llama3"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* 3. GÖRÜNÜM & TEMA SEKMESİ */}
+            {activeTab === "appearance" && (
+              <>
+                <div className="settings-pane-header">
+                  <h2 className="settings-pane-title">{t.settings.tabs.appearance}</h2>
+                  <p className="settings-pane-subtitle">{t.settings.general.accentColorDesc}</p>
+                </div>
+
+                <div className="settings-card">
+                  <div className="settings-group">
+                    <label className="settings-label">{t.settings.general.accentColorLabel}</label>
+                    <div className="color-presets" style={{ marginTop: "6px" }}>
+                      {COLOR_PRESETS.map((p) => (
+                        <div
+                          key={p.id}
+                          className={`color-dot${tempSettings.accentColor === p.color ? " active" : ""}`}
+                          style={{ background: p.color }}
+                          title={p.label}
+                          onClick={() => {
+                            setTempSettings({ ...tempSettings, accentColor: p.color });
+                            applyTheme({ ...tempSettings, accentColor: p.color });
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-group" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "14px" }}>
+                    <label className="settings-label">
+                      {t.settings.general.opacityLabel} ({Math.round(tempSettings.opacity * 100)}%)
+                    </label>
+                    <input
+                      type="range"
+                      className="opacity-slider"
+                      min="0.30"
+                      max="0.95"
+                      step="0.05"
+                      value={tempSettings.opacity}
+                      onChange={(e) => {
+                        const op = Number(e.target.value);
+                        setTempSettings({ ...tempSettings, opacity: op });
+                        applyTheme({ ...tempSettings, opacity: op });
+                      }}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* 4. GEÇMİŞ KASASI SEKMESİ */}
+            {activeTab === "history" && (
+              <>
+                <div className="settings-pane-header">
+                  <h2 className="settings-pane-title">{t.settings.tabs.history}</h2>
+                  <p className="settings-pane-subtitle">{t.historyVault.title}</p>
+                </div>
+
+                <div className="settings-card">
+                  <div className="settings-item-row">
+                    <div className="settings-item-info">
+                      <span className="settings-item-title">{historyCount} {t.historyVault.entriesCount}</span>
+                      <span className="settings-item-desc">{t.historyVault.viewHistoryHint}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="history-clear-btn"
+                      onClick={() => {
+                        clearHistoryVault();
+                        setHistoryCount(0);
+                        setHistoryClearedToast(true);
+                        setTimeout(() => setHistoryClearedToast(false), 3000);
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                      {historyClearedToast ? t.historyVault.allCleared : t.historyVault.clearHistoryBtn}
+                    </button>
+                  </div>
+                  <p className="history-disclaimer-text" style={{ margin: 0 }}>
+                    {t.historyVault.privacyWarning}
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* 5. SNIPPET'LAR SEKMESİ */}
+            {activeTab === "snippets" && (
+              <>
+                <div className="settings-pane-header">
+                  <h2 className="settings-pane-title">{t.settings.tabs.snippets}</h2>
+                  <p className="settings-pane-subtitle">{t.settings.snippets.desc}</p>
+                </div>
+
+                <div className="settings-card">
+                  <span className="settings-card-title">{t.settings.snippets.addBtn}</span>
+                  <div className="snippet-add-form">
+                    <input
+                      type="text"
+                      className="settings-input"
+                      style={{ width: "160px" }}
+                      placeholder={t.settings.snippets.prefixLabel}
+                      value={newSnippetName}
+                      onChange={(e) => setNewSnippetName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
+                    />
+                    <input
+                      type="text"
+                      className="settings-input"
+                      style={{ flex: 1 }}
+                      placeholder={t.settings.snippets.contentLabel}
+                      value={newSnippetText}
+                      onChange={(e) => setNewSnippetText(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={!newSnippetName.trim() || !newSnippetText.trim()}
+                      onClick={() => {
+                        saveSnippet(newSnippetName.trim(), newSnippetText.trim());
+                        setSnippets(loadSnippets());
+                        setNewSnippetName("");
+                        setNewSnippetText("");
+                      }}
+                    >
+                      {t.settings.snippets.addBtn}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="settings-card">
+                  <span className="settings-card-title">{t.settings.snippets.title}</span>
+                  {snippets.length === 0 ? (
+                    <span className="settings-item-desc">{t.settings.snippets.emptyList}</span>
+                  ) : (
+                    <div className="snippets-list">
+                      {snippets.map((snip) => (
+                        <div key={snip.name} className="snippet-card">
+                          <span className="snippet-card-badge">/{snip.name}</span>
+                          <span className="snippet-card-text">{snip.text}</span>
+                          <button
+                            type="button"
+                            className="snippet-delete-btn"
+                            onClick={() => {
+                              deleteSnippet(snip.name);
+                              setSnippets(loadSnippets());
+                            }}
+                            title={t.settings.common.delete}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="18" y1="6" x2="6" y2="18" />
+                              <line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* 6. KISAYOLLAR SEKMESİ */}
+            {activeTab === "shortcuts" && (
+              <>
+                <div className="settings-pane-header">
+                  <h2 className="settings-pane-title">{t.settings.tabs.shortcuts}</h2>
+                  <p className="settings-pane-subtitle">{t.settings.shortcuts.globalToggleDesc}</p>
+                </div>
+
+                <div className="shortcut-grid">
+                  <div className="shortcut-card">
+                    <div className="shortcut-card-keys">
+                      <kbd>Ctrl</kbd> + <kbd>Space</kbd>
+                    </div>
+                    <span className="shortcut-card-desc">{t.settings.shortcuts.globalToggle}</span>
+                  </div>
+                  <div className="shortcut-card">
+                    <div className="shortcut-card-keys">
+                      <kbd>Ctrl</kbd> + <kbd>H</kbd>
+                    </div>
+                    <span className="shortcut-card-desc">{t.historyVault.title}</span>
+                  </div>
+                  <div className="shortcut-card">
+                    <div className="shortcut-card-keys">
+                      <kbd>Esc</kbd>
+                    </div>
+                    <span className="shortcut-card-desc">{t.settings.shortcuts.hideWindow}</span>
+                  </div>
+                  <div className="shortcut-card">
+                    <div className="shortcut-card-keys">
+                      <kbd>Enter</kbd>
+                    </div>
+                    <span className="shortcut-card-desc">{t.settings.shortcuts.submitPrompt}</span>
+                  </div>
+                  <div className="shortcut-card">
+                    <div className="shortcut-card-keys">
+                      <kbd>Ctrl</kbd> + <kbd>1-9</kbd>
+                    </div>
+                    <span className="shortcut-card-desc">{currentLang === "tr" ? "Hızlı AI Komutları" : "Quick AI Commands"}</span>
+                  </div>
+                  <div className="shortcut-card">
+                    <div className="shortcut-card-keys">
+                      <kbd>/</kbd>
+                    </div>
+                    <span className="shortcut-card-desc">{currentLang === "tr" ? "Slash Menüsü & Snippet" : "Slash Menu & Snippets"}</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* 7. HAKKINDA SEKMESİ */}
+            {activeTab === "about" && (
+              <>
+                <div className="settings-pane-header">
+                  <h2 className="settings-pane-title">{t.settings.tabs.about}</h2>
+                  <p className="settings-pane-subtitle">{t.settings.about.version}</p>
+                </div>
+
+                <div className="settings-card">
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div className="settings-brand-icon" style={{ width: "32px", height: "32px", borderRadius: "8px" }} />
+                    <div>
+                      <h3 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)" }}>
+                        {t.settings.about.appName}
+                      </h3>
+                      <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                        {t.settings.about.version}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="settings-item-desc" style={{ fontSize: "12px", lineHeight: 1.5 }}>
+                    {t.settings.about.description}
+                  </p>
+                  <div style={{ fontSize: "11px", color: "var(--accent-color)", fontWeight: 600 }}>
+                    {t.settings.about.stack}
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        navigator.clipboard.writeText("CoreType for Linux v0.1.0\nTauri v2 + React 19 + Rust\nWayland/X11 Desktop Assistant");
+                        setCopiedSysInfo(true);
+                        setTimeout(() => setCopiedSysInfo(false), 2000);
+                      }}
+                    >
+                      {copiedSysInfo ? t.settings.common.copied : t.settings.about.copyInfo}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Sabit Alt Eylem Çubuğu */}
+          <div className="settings-footer">
+            <div className="settings-footer-status">
+              {savedToast && (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>{t.settings.common.saved}</span>
+                </>
+              )}
+            </div>
+            <div className="settings-footer-actions">
+              <button type="button" className="btn btn-secondary" onClick={handleCancel}>
+                {t.settings.common.cancel}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={handleSave}>
+                {t.settings.common.save}
               </button>
             </div>
-            <p className="history-disclaimer-text">
-              {t.historyVault.privacyWarning}
-            </p>
           </div>
         </div>
-
-        {/* end of settings-panel scroll area */}
-      </div>
-
-      {/* Action Buttons — always visible at bottom */}
-      <div className="actions-row sticky-actions">
-        <button className="btn btn-secondary" onClick={handleCancel}>{t.settings.common.cancel}</button>
-        <button className="btn btn-primary" onClick={handleSave}>{t.settings.common.save}</button>
       </div>
     </div>
   );
@@ -1187,8 +1577,8 @@ function MainView() {
     new WebviewWindow("settings", {
       url: "/?page=settings",
       title: `CoreType — ${t.settings.windowTitle}`,
-      width: 900,
-      height: 1000,
+      width: 840,
+      height: 620,
       resizable: false,
       decorations: false,
       transparent: true,

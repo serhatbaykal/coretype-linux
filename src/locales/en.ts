@@ -58,7 +58,9 @@ export const en: TranslationSchema = {
     windowSubtitle: "General preferences, AI models, and system integration",
     tabs: {
       general: "General",
-      models: "AI Provider",
+      models: "Model & API",
+      appearance: "Appearance",
+      history: "History Vault",
       shortcuts: "Shortcuts",
       snippets: "Snippets",
       about: "About",

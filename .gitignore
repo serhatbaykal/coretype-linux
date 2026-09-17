@@ -46,3 +46,11 @@ Thumbs.db
 .tempmediaStorage/
 .user_uploaded/
 yedekler/
+.agent/
+
+# Internal Project & AI Scratch Notes
+CHANGELOG.md
+PROJECT_CONTEXT.md
+fikirler.md
+direct-file-migration.md
+linux-backend-architecture.md

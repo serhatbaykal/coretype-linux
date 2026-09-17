@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri_plugin_global_shortcut::{
@@ -408,6 +408,90 @@ pub fn toggle_main_window(app: &AppHandle) {
     }
 }
 
+pub fn toggle_history_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let is_visible = window.is_visible().unwrap_or(false);
+        eprintln!("[CoreType] Toggle history window! Currently visible: {}", is_visible);
+        if !is_visible {
+            let act_ctx = get_active_context();
+            let win_w = 840.0;
+            let win_h = 540.0;
+
+            let target_monitor = if let Ok(monitors) = window.available_monitors() {
+                let use_second = act_ctx.screen_rect.map(|(sx, _, _, _)| sx > 0).unwrap_or(false);
+                if use_second {
+                    monitors.into_iter().find(|m| m.position().x > 0)
+                } else {
+                    monitors.into_iter().find(|m| m.position().x == 0)
+                }
+            } else {
+                None
+            };
+
+            let (target_x, target_y) = if let Some(monitor) = target_monitor.or_else(|| window.current_monitor().ok().flatten()) {
+                let scale = monitor.scale_factor();
+                let size = monitor.size().to_logical::<f64>(scale);
+                let pos = monitor.position().to_logical::<f64>(scale);
+                let tx = pos.x + (size.width - win_w) / 2.0;
+                let ty = pos.y + (size.height - win_h) / 2.0;
+                (tx, ty)
+            } else {
+                ((3840.0 - win_w) / 2.0, (2160.0 - win_h) / 2.0)
+            };
+
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: win_w, height: win_h }));
+            let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: target_x, y: target_y }));
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        let _ = window.emit("toggle_history_vault", ());
+    }
+}
+
+#[tauri::command]
+fn open_settings_window(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(existing) = app_handle.get_webview_window("settings") {
+        if let Ok(Some(monitor)) = existing.current_monitor() {
+            let scale = monitor.scale_factor();
+            let size = monitor.size().to_logical::<f64>(scale);
+            let pos = monitor.position().to_logical::<f64>(scale);
+            let tx = pos.x + (size.width - 1000.0) / 2.0;
+            let ty = pos.y + (size.height - 900.0) / 2.0;
+            let _ = existing.set_size(tauri::Size::Logical(tauri::LogicalSize { width: 1000.0, height: 900.0 }));
+            let _ = existing.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: tx, y: ty }));
+        }
+        let _ = existing.show();
+        let _ = existing.set_focus();
+    } else {
+        let win = tauri::WebviewWindowBuilder::new(
+            &app_handle,
+            "settings",
+            tauri::WebviewUrl::App("/?page=settings".into()),
+        )
+        .title("CoreType Settings")
+        .inner_size(1000.0, 900.0)
+        .resizable(true)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .visible(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+        if let Ok(Some(monitor)) = win.current_monitor() {
+            let scale = monitor.scale_factor();
+            let size = monitor.size().to_logical::<f64>(scale);
+            let pos = monitor.position().to_logical::<f64>(scale);
+            let tx = pos.x + (size.width - 1000.0) / 2.0;
+            let ty = pos.y + (size.height - 900.0) / 2.0;
+            let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: tx, y: ty }));
+        }
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn get_display_scale() -> f64 {
     1.0
@@ -710,6 +794,8 @@ pub fn run() {
                         if event.state == ShortcutState::Pressed {
                             if shortcut.key == Code::Space && shortcut.mods == Modifiers::CONTROL {
                                 toggle_main_window(app);
+                            } else if shortcut.key == Code::KeyH && shortcut.mods == Modifiers::CONTROL {
+                                toggle_history_window(app);
                             }
                         }
                     },
@@ -717,10 +803,16 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            let shortcut = Shortcut::new(Some(Modifiers::CONTROL), Code::Space);
-            match app.global_shortcut().register(shortcut) {
+            let shortcut_space = Shortcut::new(Some(Modifiers::CONTROL), Code::Space);
+            match app.global_shortcut().register(shortcut_space) {
                 Ok(_) => eprintln!("[CoreType] Global shortcut Ctrl+Space registered successfully!"),
-                Err(e) => eprintln!("[CoreType] ERROR registering shortcut: {:?}", e),
+                Err(e) => eprintln!("[CoreType] ERROR registering shortcut Ctrl+Space: {:?}", e),
+            }
+
+            let shortcut_history = Shortcut::new(Some(Modifiers::CONTROL), Code::KeyH);
+            match app.global_shortcut().register(shortcut_history) {
+                Ok(_) => eprintln!("[CoreType] Global shortcut Ctrl+H registered successfully!"),
+                Err(e) => eprintln!("[CoreType] ERROR registering shortcut Ctrl+H: {:?}", e),
             }
 
             // Setup Unix domain socket listener for instant CLI --toggle IPC
@@ -737,8 +829,13 @@ pub fn run() {
                     for stream in listener.incoming().flatten() {
                         let mut reader = BufReader::new(stream);
                         let mut line = String::new();
-                        if reader.read_line(&mut line).is_ok() && line.trim() == "toggle" {
-                            toggle_main_window(&app_handle);
+                        if reader.read_line(&mut line).is_ok() {
+                            let cmd = line.trim();
+                            if cmd == "toggle" {
+                                toggle_main_window(&app_handle);
+                            } else if cmd == "history" {
+                                toggle_history_window(&app_handle);
+                            }
                         }
                     }
                 });
@@ -768,48 +865,14 @@ pub fn run() {
             TrayIconBuilder::with_id("main_tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&tray_menu)
-                .tooltip("CoreType — Ctrl+Space")
+                .tooltip("CoreType — Ctrl+Space / Ctrl+H")
                 .on_menu_event(|app, event| {
                     match event.id().as_ref() {
                         "show" => {
                             toggle_main_window(app);
                         }
                         "settings" => {
-                            // Open settings window
-                            if let Some(existing) = app.get_webview_window("settings") {
-                                if let Ok(Some(monitor)) = existing.current_monitor() {
-                                    let scale = monitor.scale_factor();
-                                    let size = monitor.size().to_logical::<f64>(scale);
-                                    let pos = monitor.position().to_logical::<f64>(scale);
-                                    let tx = pos.x + (size.width - 1000.0) / 2.0;
-                                    let ty = pos.y + (size.height - 900.0) / 2.0;
-                                    let _ = existing.set_size(tauri::Size::Logical(tauri::LogicalSize { width: 1000.0, height: 900.0 }));
-                                    let _ = existing.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: tx, y: ty }));
-                                }
-                                let _ = existing.show();
-                                let _ = existing.set_focus();
-                            } else if let Ok(new_win) = tauri::WebviewWindowBuilder::new(
-                                app,
-                                "settings",
-                                tauri::WebviewUrl::App("/?page=settings".into()),
-                            )
-                            .title("CoreType Settings")
-                            .inner_size(1000.0, 900.0)
-                            .resizable(true)
-                            .decorations(false)
-                            .transparent(true)
-                            .always_on_top(true)
-                            .visible(false)
-                            .build() {
-                                if let Ok(Some(monitor)) = new_win.current_monitor() {
-                                    let scale = monitor.scale_factor();
-                                    let size = monitor.size().to_logical::<f64>(scale);
-                                    let pos = monitor.position().to_logical::<f64>(scale);
-                                    let tx = pos.x + (size.width - 1000.0) / 2.0;
-                                    let ty = pos.y + (size.height - 900.0) / 2.0;
-                                    let _ = new_win.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: tx, y: ty }));
-                                }
-                            }
+                            let _ = open_settings_window(app.clone());
                         }
                         "quit" => {
                             std::process::exit(0);
@@ -832,7 +895,8 @@ pub fn run() {
             get_display_scale,
             resize_window,
             get_system_context,
-            update_tray_language
+            update_tray_language,
+            open_settings_window
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

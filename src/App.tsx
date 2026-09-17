@@ -259,8 +259,6 @@ function SettingsView() {
     applyTheme(tempSettings);
     const appWin = getCurrentWindow();
     const timer = setTimeout(async () => {
-      try { await appWin.setSize(new LogicalSize(1000, 900)); } catch (e) { console.error("setSize failed:", e); }
-      try { await appWin.center(); } catch (e) { console.error("center failed:", e); }
       try { await appWin.show(); } catch (e) { console.error("show failed:", e); }
       try { await appWin.setFocus(); } catch (e) { console.error("setFocus failed:", e); }
     }, 50);

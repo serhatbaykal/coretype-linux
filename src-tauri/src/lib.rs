@@ -72,17 +72,23 @@ struct ActiveContext {
 fn get_active_context() -> ActiveContext {
     let script = r#"
 var res = "NONE";
-var sx = 0, sy = 0, sw = 2194, sh = 1234;
+var sx = 0, sy = 0, sw = 3840, sh = 2160;
 var w = workspace.activeWindow;
+var o = null;
 if (w) {
     res = (w.resourceClass || "none") + "|||" + (w.caption || "none");
-    if (w.output) {
-        var g = w.output.geometry;
-        sx = g.x; sy = g.y; sw = g.width; sh = g.height;
-    }
-} else if (workspace.activeScreen) {
-    var g = workspace.activeScreen.geometry;
-    sx = g.x; sy = g.y; sw = g.width; sh = g.height;
+    o = w.output;
+}
+if (!o) {
+    o = workspace.activeScreen;
+}
+if (o) {
+    var dpr = o.devicePixelRatio || 1.0;
+    var g = o.geometry;
+    sx = Math.round(g.x * dpr);
+    sy = Math.round(g.y * dpr);
+    sw = Math.round(g.width * dpr);
+    sh = Math.round(g.height * dpr);
 }
 console.warn("CT_ACT:" + res + "|||" + sx + "|||" + sy + "|||" + sw + "|||" + sh);
 "#;
@@ -138,8 +144,8 @@ console.warn("CT_ACT:" + res + "|||" + sx + "|||" + sy + "|||" + sw + "|||" + sh
                     let raw_caption = parts[1];
                     let sx: i32 = parts[2].parse().unwrap_or(0);
                     let sy: i32 = parts[3].parse().unwrap_or(0);
-                    let sw: u32 = parts[4].parse().unwrap_or(2194);
-                    let sh: u32 = parts[5].parse().unwrap_or(1234);
+                    let sw: u32 = parts[4].parse().unwrap_or(3840);
+                    let sh: u32 = parts[5].parse().unwrap_or(2160);
 
                     screen_rect = Some((sx, sy, sw, sh));
                     class_name = raw_class.to_string();
@@ -355,27 +361,26 @@ pub fn toggle_main_window(app: &AppHandle) {
             let win_w = 840.0;
             let win_h = if has_selected { 320.0 } else { 260.0 };
             
-            // Determine target position based on active window screen geometry (KWin logical coords)
+            // Determine target position based on active window screen geometry (physical X11 coords)
             let (target_x, target_y) = if let Some((sx, sy, sw, sh)) = act_ctx.screen_rect {
                 let tx = sx as f64 + (sw as f64 - win_w) / 2.0;
                 let ty = sy as f64 + (sh as f64 - win_h) / 2.0;
                 (tx, ty)
             } else if let Some(monitor) = window.current_monitor().ok().flatten() {
-                let scale = monitor.scale_factor();
-                let size = monitor.size().to_logical::<f64>(scale);
-                let pos = monitor.position().to_logical::<f64>(scale);
-                let tx = pos.x + (size.width - win_w) / 2.0;
-                let ty = pos.y + (size.height - win_h) / 2.0;
+                let size = monitor.size();
+                let pos = monitor.position();
+                let tx = pos.x as f64 + (size.width as f64 - win_w) / 2.0;
+                let ty = pos.y as f64 + (size.height as f64 - win_h) / 2.0;
                 (tx, ty)
             } else {
-                ((2195.0 - win_w) / 2.0, (1235.0 - win_h) / 2.0)
+                ((3840.0 - win_w) / 2.0, (2160.0 - win_h) / 2.0)
             };
 
-            eprintln!("[CoreType] Positioning window at logical ({}, {}) with size {}x{}",
+            eprintln!("[CoreType] Positioning window at physical ({}, {}) with size {}x{}",
                 target_x, target_y, win_w, win_h);
 
-            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: win_w, height: win_h }));
-            let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: target_x, y: target_y }));
+            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: win_w as u32, height: win_h as u32 }));
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: target_x as i32, y: target_y as i32 }));
             let _ = window.show();
             let _ = window.set_focus();
 
@@ -415,18 +420,17 @@ pub fn toggle_history_window(app: &AppHandle) {
                 let ty = sy as f64 + (sh as f64 - win_h) / 2.0;
                 (tx, ty)
             } else if let Some(monitor) = window.current_monitor().ok().flatten() {
-                let scale = monitor.scale_factor();
-                let size = monitor.size().to_logical::<f64>(scale);
-                let pos = monitor.position().to_logical::<f64>(scale);
-                let tx = pos.x + (size.width - win_w) / 2.0;
-                let ty = pos.y + (size.height - win_h) / 2.0;
+                let size = monitor.size();
+                let pos = monitor.position();
+                let tx = pos.x as f64 + (size.width as f64 - win_w) / 2.0;
+                let ty = pos.y as f64 + (size.height as f64 - win_h) / 2.0;
                 (tx, ty)
             } else {
-                ((2195.0 - win_w) / 2.0, (1235.0 - win_h) / 2.0)
+                ((3840.0 - win_w) / 2.0, (2160.0 - win_h) / 2.0)
             };
 
-            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: win_w, height: win_h }));
-            let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: target_x, y: target_y }));
+            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: win_w as u32, height: win_h as u32 }));
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: target_x as i32, y: target_y as i32 }));
             let _ = window.show();
             let _ = window.set_focus();
             let _ = window.emit("open_history_vault", ());
@@ -439,17 +443,19 @@ pub fn toggle_history_window(app: &AppHandle) {
 #[tauri::command]
 fn open_settings_window(app_handle: AppHandle) -> Result<(), String> {
     let act_ctx = get_active_context();
+    let win_w = 1000.0;
+    let win_h = 900.0;
     let (target_x, target_y) = if let Some((sx, sy, sw, sh)) = act_ctx.screen_rect {
-        let tx = sx as f64 + (sw as f64 - 1000.0) / 2.0;
-        let ty = sy as f64 + (sh as f64 - 900.0) / 2.0;
+        let tx = sx as f64 + (sw as f64 - win_w) / 2.0;
+        let ty = sy as f64 + (sh as f64 - win_h) / 2.0;
         (tx, ty)
     } else {
-        ((2195.0 - 1000.0) / 2.0, (1235.0 - 900.0) / 2.0)
+        ((3840.0 - win_w) / 2.0, (2160.0 - win_h) / 2.0)
     };
 
     if let Some(existing) = app_handle.get_webview_window("settings") {
-        let _ = existing.set_size(tauri::Size::Logical(tauri::LogicalSize { width: 1000.0, height: 900.0 }));
-        let _ = existing.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: target_x, y: target_y }));
+        let _ = existing.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: win_w as u32, height: win_h as u32 }));
+        let _ = existing.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: target_x as i32, y: target_y as i32 }));
         let _ = existing.show();
         let _ = existing.set_focus();
     } else {
@@ -459,16 +465,17 @@ fn open_settings_window(app_handle: AppHandle) -> Result<(), String> {
             tauri::WebviewUrl::App("/?page=settings".into()),
         )
         .title("CoreType Settings")
-        .inner_size(1000.0, 900.0)
+        .inner_size(win_w, win_h)
         .resizable(true)
         .decorations(false)
         .transparent(true)
         .always_on_top(true)
-        .visible(true)
+        .visible(false)
         .build()
         .map_err(|e| e.to_string())?;
 
-        let _ = win.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: target_x, y: target_y }));
+        let _ = win.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: win_w as u32, height: win_h as u32 }));
+        let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: target_x as i32, y: target_y as i32 }));
         let _ = win.show();
         let _ = win.set_focus();
     }
@@ -483,20 +490,16 @@ fn get_display_scale() -> f64 {
 #[tauri::command]
 fn resize_window(app_handle: AppHandle, logical_width: f64, logical_height: f64) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
-        let current_size = window.inner_size().ok().map(|s| {
-            let scale = window.scale_factor().unwrap_or(1.0);
-            s.to_logical::<f64>(scale)
-        });
-
+        let current_size = window.inner_size().ok();
         let needs_resize = match current_size {
-            Some(cur) => (cur.width - logical_width).abs() > 1.0 || (cur.height - logical_height).abs() > 1.0,
+            Some(cur) => (cur.width as f64 - logical_width).abs() > 1.0 || (cur.height as f64 - logical_height).abs() > 1.0,
             None => true,
         };
 
         if needs_resize {
-            let res = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
-                width: logical_width,
-                height: logical_height,
+            let res = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                width: logical_width as u32,
+                height: logical_height as u32,
             }));
             eprintln!(
                 "[CoreType] Window resized to {}x{} (result: {:?})",

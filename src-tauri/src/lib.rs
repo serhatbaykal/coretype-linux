@@ -62,6 +62,138 @@ pub fn get_xwayland_scale() -> f64 {
     1.0
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MonitorGeometry {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub scale_factor: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowGeometry {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+pub fn get_target_monitor(
+    window: &tauri::WebviewWindow,
+    active_screen_rect: Option<(i32, i32, u32, u32)>,
+) -> MonitorGeometry {
+    // Tier 1: Active window's monitor from desktop environment (e.g. KWin on KDE Plasma)
+    if let Some((sx, sy, sw, sh)) = active_screen_rect {
+        if sw > 0 && sh > 0 {
+            return MonitorGeometry {
+                x: sx,
+                y: sy,
+                width: sw,
+                height: sh,
+                scale_factor: 1.0,
+            };
+        }
+    }
+
+    let available = window.available_monitors().ok().unwrap_or_default();
+
+    // Tier 2: Check mouse cursor position to find the monitor currently hosting the cursor (GNOME, XFCE, Sway, i3, etc.)
+    if !available.is_empty() {
+        if let Ok(cursor) = window.cursor_position() {
+            for m in &available {
+                let pos = m.position();
+                let size = m.size();
+                let mx = pos.x as f64;
+                let my = pos.y as f64;
+                let mw = size.width as f64;
+                let mh = size.height as f64;
+
+                if cursor.x >= mx && cursor.x < mx + mw && cursor.y >= my && cursor.y < my + mh {
+                    return MonitorGeometry {
+                        x: pos.x,
+                        y: pos.y,
+                        width: size.width,
+                        height: size.height,
+                        scale_factor: m.scale_factor(),
+                    };
+                }
+            }
+        }
+
+        // Tier 3: Current window monitor
+        if let Ok(Some(current)) = window.current_monitor() {
+            return MonitorGeometry {
+                x: current.position().x,
+                y: current.position().y,
+                width: current.size().width,
+                height: current.size().height,
+                scale_factor: current.scale_factor(),
+            };
+        }
+
+        // Tier 4: Primary monitor
+        if let Ok(Some(primary)) = window.primary_monitor() {
+            return MonitorGeometry {
+                x: primary.position().x,
+                y: primary.position().y,
+                width: primary.size().width,
+                height: primary.size().height,
+                scale_factor: primary.scale_factor(),
+            };
+        }
+
+        // Tier 5: First available monitor
+        if let Some(first) = available.first() {
+            return MonitorGeometry {
+                x: first.position().x,
+                y: first.position().y,
+                width: first.size().width,
+                height: first.size().height,
+                scale_factor: first.scale_factor(),
+            };
+        }
+    }
+
+    // Tier 6: Safe generic baseline (1080p fallback)
+    MonitorGeometry {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+        scale_factor: 1.0,
+    }
+}
+
+pub fn calculate_window_geometry(
+    monitor: &MonitorGeometry,
+    requested_width: u32,
+    requested_height: u32,
+) -> WindowGeometry {
+    // Dynamic boundary clamping: leave safe margins so windows never overflow small screens
+    let margin_x = 40u32;
+    let margin_y = 60u32;
+
+    let max_allowed_w = monitor.width.saturating_sub(margin_x).max(320);
+    let max_allowed_h = monitor.height.saturating_sub(margin_y).max(200);
+
+    let actual_w = requested_width.min(max_allowed_w);
+    let actual_h = requested_height.min(max_allowed_h);
+
+    let center_x = monitor.x + ((monitor.width.saturating_sub(actual_w)) / 2) as i32;
+    let center_y = monitor.y + ((monitor.height.saturating_sub(actual_h)) / 2) as i32;
+
+    let safe_x = center_x.max(monitor.x);
+    let safe_y = center_y.max(monitor.y);
+
+    WindowGeometry {
+        x: safe_x,
+        y: safe_y,
+        width: actual_w,
+        height: actual_h,
+    }
+}
+
 struct ActiveContext {
     is_terminal: bool,
     screen_rect: Option<(i32, i32, u32, u32)>,
@@ -72,7 +204,7 @@ struct ActiveContext {
 fn get_active_context() -> ActiveContext {
     let script = r#"
 var res = "NONE";
-var sx = 0, sy = 0, sw = 3840, sh = 2160;
+var sx = 0, sy = 0, sw = 0, sh = 0;
 var w = workspace.activeWindow;
 var o = null;
 if (w) {
@@ -85,10 +217,12 @@ if (!o) {
 if (o) {
     var dpr = o.devicePixelRatio || 1.0;
     var g = o.geometry;
-    sx = Math.round(g.x * dpr);
-    sy = Math.round(g.y * dpr);
-    sw = Math.round(g.width * dpr);
-    sh = Math.round(g.height * dpr);
+    if (g && g.width > 0 && g.height > 0) {
+        sx = Math.round(g.x * dpr);
+        sy = Math.round(g.y * dpr);
+        sw = Math.round(g.width * dpr);
+        sh = Math.round(g.height * dpr);
+    }
 }
 console.warn("CT_ACT:" + res + "|||" + sx + "|||" + sy + "|||" + sw + "|||" + sh);
 "#;
@@ -110,6 +244,7 @@ console.warn("CT_ACT:" + res + "|||" + sx + "|||" + sy + "|||" + sw + "|||" + sh
             "--type=method_call",
             "/Scripting",
             "org.kde.kwin.Scripting.start",
+            "string:/tmp/ct_act.js",
         ])
         .output();
     thread::sleep(Duration::from_millis(30));
@@ -144,10 +279,12 @@ console.warn("CT_ACT:" + res + "|||" + sx + "|||" + sy + "|||" + sw + "|||" + sh
                     let raw_caption = parts[1];
                     let sx: i32 = parts[2].parse().unwrap_or(0);
                     let sy: i32 = parts[3].parse().unwrap_or(0);
-                    let sw: u32 = parts[4].parse().unwrap_or(3840);
-                    let sh: u32 = parts[5].parse().unwrap_or(2160);
+                    let sw: u32 = parts[4].parse().unwrap_or(0);
+                    let sh: u32 = parts[5].parse().unwrap_or(0);
 
-                    screen_rect = Some((sx, sy, sw, sh));
+                    if sw > 0 && sh > 0 {
+                        screen_rect = Some((sx, sy, sw, sh));
+                    }
                     class_name = raw_class.to_string();
                     window_title = raw_caption.to_string();
 
@@ -358,29 +495,17 @@ pub fn toggle_main_window(app: &AppHandle) {
             }
 
             // Target dimensions matching CoreType spotlight UI (roomy 840x260)
-            let win_w = 840.0;
-            let win_h = if has_selected { 320.0 } else { 260.0 };
+            let req_w = 840u32;
+            let req_h = if has_selected { 320u32 } else { 260u32 };
             
-            // Determine target position based on active window screen geometry (physical X11 coords)
-            let (target_x, target_y) = if let Some((sx, sy, sw, sh)) = act_ctx.screen_rect {
-                let tx = sx as f64 + (sw as f64 - win_w) / 2.0;
-                let ty = sy as f64 + (sh as f64 - win_h) / 2.0;
-                (tx, ty)
-            } else if let Some(monitor) = window.current_monitor().ok().flatten() {
-                let size = monitor.size();
-                let pos = monitor.position();
-                let tx = pos.x as f64 + (size.width as f64 - win_w) / 2.0;
-                let ty = pos.y as f64 + (size.height as f64 - win_h) / 2.0;
-                (tx, ty)
-            } else {
-                ((3840.0 - win_w) / 2.0, (2160.0 - win_h) / 2.0)
-            };
+            let monitor = get_target_monitor(&window, act_ctx.screen_rect);
+            let geom = calculate_window_geometry(&monitor, req_w, req_h);
 
-            eprintln!("[CoreType] Positioning window at physical ({}, {}) with size {}x{}",
-                target_x, target_y, win_w, win_h);
+            eprintln!("[CoreType] Universal positioning on monitor ({},{},{}x{}): placing at ({}, {}) size {}x{}",
+                monitor.x, monitor.y, monitor.width, monitor.height, geom.x, geom.y, geom.width, geom.height);
 
-            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: win_w as u32, height: win_h as u32 }));
-            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: target_x as i32, y: target_y as i32 }));
+            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: geom.width, height: geom.height }));
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: geom.x, y: geom.y }));
             let _ = window.show();
             let _ = window.set_focus();
 
@@ -412,25 +537,17 @@ pub fn toggle_history_window(app: &AppHandle) {
         eprintln!("[CoreType] Toggle history window! Currently visible: {}", is_visible);
         if !is_visible {
             let act_ctx = get_active_context();
-            let win_w = 840.0;
-            let win_h = 540.0;
+            let req_w = 840u32;
+            let req_h = 540u32;
 
-            let (target_x, target_y) = if let Some((sx, sy, sw, sh)) = act_ctx.screen_rect {
-                let tx = sx as f64 + (sw as f64 - win_w) / 2.0;
-                let ty = sy as f64 + (sh as f64 - win_h) / 2.0;
-                (tx, ty)
-            } else if let Some(monitor) = window.current_monitor().ok().flatten() {
-                let size = monitor.size();
-                let pos = monitor.position();
-                let tx = pos.x as f64 + (size.width as f64 - win_w) / 2.0;
-                let ty = pos.y as f64 + (size.height as f64 - win_h) / 2.0;
-                (tx, ty)
-            } else {
-                ((3840.0 - win_w) / 2.0, (2160.0 - win_h) / 2.0)
-            };
+            let monitor = get_target_monitor(&window, act_ctx.screen_rect);
+            let geom = calculate_window_geometry(&monitor, req_w, req_h);
 
-            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: win_w as u32, height: win_h as u32 }));
-            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: target_x as i32, y: target_y as i32 }));
+            eprintln!("[CoreType] Universal positioning history on monitor ({},{},{}x{}): placing at ({}, {}) size {}x{}",
+                monitor.x, monitor.y, monitor.width, monitor.height, geom.x, geom.y, geom.width, geom.height);
+
+            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: geom.width, height: geom.height }));
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: geom.x, y: geom.y }));
             let _ = window.show();
             let _ = window.set_focus();
             let _ = window.emit("open_history_vault", ());
@@ -443,19 +560,25 @@ pub fn toggle_history_window(app: &AppHandle) {
 #[tauri::command]
 fn open_settings_window(app_handle: AppHandle) -> Result<(), String> {
     let act_ctx = get_active_context();
-    let win_w = 1000.0;
-    let win_h = 900.0;
-    let (target_x, target_y) = if let Some((sx, sy, sw, sh)) = act_ctx.screen_rect {
-        let tx = sx as f64 + (sw as f64 - win_w) / 2.0;
-        let ty = sy as f64 + (sh as f64 - win_h) / 2.0;
-        (tx, ty)
+    let req_w = 1000u32;
+    let req_h = 900u32;
+
+    let target_monitor = if let Some(main_win) = app_handle.get_webview_window("main") {
+        get_target_monitor(&main_win, act_ctx.screen_rect)
+    } else if let Some(settings_win) = app_handle.get_webview_window("settings") {
+        get_target_monitor(&settings_win, act_ctx.screen_rect)
     } else {
-        ((3840.0 - win_w) / 2.0, (2160.0 - win_h) / 2.0)
+        MonitorGeometry { x: 0, y: 0, width: 1920, height: 1080, scale_factor: 1.0 }
     };
 
+    let geom = calculate_window_geometry(&target_monitor, req_w, req_h);
+
+    eprintln!("[CoreType] Universal positioning settings on monitor ({},{},{}x{}): placing at ({}, {}) size {}x{}",
+        target_monitor.x, target_monitor.y, target_monitor.width, target_monitor.height, geom.x, geom.y, geom.width, geom.height);
+
     if let Some(existing) = app_handle.get_webview_window("settings") {
-        let _ = existing.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: win_w as u32, height: win_h as u32 }));
-        let _ = existing.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: target_x as i32, y: target_y as i32 }));
+        let _ = existing.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: geom.width, height: geom.height }));
+        let _ = existing.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: geom.x, y: geom.y }));
         let _ = existing.show();
         let _ = existing.set_focus();
     } else {
@@ -465,7 +588,7 @@ fn open_settings_window(app_handle: AppHandle) -> Result<(), String> {
             tauri::WebviewUrl::App("/?page=settings".into()),
         )
         .title("CoreType Settings")
-        .inner_size(win_w, win_h)
+        .inner_size(geom.width as f64, geom.height as f64)
         .resizable(true)
         .decorations(false)
         .transparent(true)
@@ -474,8 +597,8 @@ fn open_settings_window(app_handle: AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-        let _ = win.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: win_w as u32, height: win_h as u32 }));
-        let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: target_x as i32, y: target_y as i32 }));
+        let _ = win.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: geom.width, height: geom.height }));
+        let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: geom.x, y: geom.y }));
         let _ = win.show();
         let _ = win.set_focus();
     }
@@ -893,4 +1016,127 @@ pub fn run() {
                 api.prevent_exit();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_centering_1080p_spotlight() {
+        let monitor = MonitorGeometry {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            scale_factor: 1.0,
+        };
+        let geom = calculate_window_geometry(&monitor, 840, 260);
+        assert_eq!(geom.width, 840);
+        assert_eq!(geom.height, 260);
+        assert_eq!(geom.x, 540);
+        assert_eq!(geom.y, 410);
+    }
+
+    #[test]
+    fn test_centering_1440p_spotlight() {
+        let monitor = MonitorGeometry {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+            scale_factor: 1.0,
+        };
+        let geom = calculate_window_geometry(&monitor, 840, 260);
+        assert_eq!(geom.width, 840);
+        assert_eq!(geom.height, 260);
+        assert_eq!(geom.x, 860);
+        assert_eq!(geom.y, 590);
+    }
+
+    #[test]
+    fn test_centering_4k_spotlight() {
+        let monitor = MonitorGeometry {
+            x: 0,
+            y: 0,
+            width: 3840,
+            height: 2160,
+            scale_factor: 1.75,
+        };
+        let geom = calculate_window_geometry(&monitor, 840, 260);
+        assert_eq!(geom.width, 840);
+        assert_eq!(geom.height, 260);
+        assert_eq!(geom.x, 1500);
+        assert_eq!(geom.y, 950);
+    }
+
+    #[test]
+    fn test_centering_dual_monitor_offset() {
+        // Second monitor positioned to the right of primary 1080p monitor
+        let monitor = MonitorGeometry {
+            x: 1920,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            scale_factor: 1.0,
+        };
+        let geom = calculate_window_geometry(&monitor, 840, 260);
+        assert_eq!(geom.width, 840);
+        assert_eq!(geom.height, 260);
+        assert_eq!(geom.x, 1920 + 540);
+        assert_eq!(geom.y, 410);
+    }
+
+    #[test]
+    fn test_centering_ultrawide() {
+        let monitor = MonitorGeometry {
+            x: 0,
+            y: 0,
+            width: 3440,
+            height: 1440,
+            scale_factor: 1.0,
+        };
+        let geom = calculate_window_geometry(&monitor, 840, 260);
+        assert_eq!(geom.width, 840);
+        assert_eq!(geom.height, 260);
+        assert_eq!(geom.x, (3440 - 840) / 2);
+        assert_eq!(geom.y, (1440 - 260) / 2);
+    }
+
+    #[test]
+    fn test_small_laptop_screen_clamping() {
+        // Laptop screen: 1366x768. Settings window requested at 1000x900
+        let monitor = MonitorGeometry {
+            x: 0,
+            y: 0,
+            width: 1366,
+            height: 768,
+            scale_factor: 1.0,
+        };
+        let geom = calculate_window_geometry(&monitor, 1000, 900);
+        // Height clamped to 768 - 60 = 708
+        assert_eq!(geom.width, 1000);
+        assert_eq!(geom.height, 708);
+        assert!(geom.x >= 0);
+        assert!(geom.y >= 0);
+        assert!(geom.x + geom.width as i32 <= 1366);
+        assert!(geom.y + geom.height as i32 <= 768);
+    }
+
+    #[test]
+    fn test_extreme_small_resolution_no_overflow() {
+        // 800x600 display
+        let monitor = MonitorGeometry {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+            scale_factor: 1.0,
+        };
+        let geom = calculate_window_geometry(&monitor, 1000, 900);
+        assert!(geom.width <= 800);
+        assert!(geom.height <= 600);
+        assert!(geom.x >= 0);
+        assert!(geom.y >= 0);
+    }
 }

@@ -1137,8 +1137,10 @@ function MainView() {
   const [historyVault, setHistoryVault] = useState<HistoryEntry[]>(loadHistoryVault);
   const [showHistoryVault, setShowHistoryVault] = useState(false);
   const showHistoryVaultRef = useRef(false);
+  const isOpeningHistoryRef = useRef(false);
   useEffect(() => {
     showHistoryVaultRef.current = showHistoryVault;
+    if (!showHistoryVault) isOpeningHistoryRef.current = false;
   }, [showHistoryVault]);
   const [vaultFilter, setVaultFilter] = useState("");
   const [vaultActiveIdx, setVaultActiveIdx] = useState(0);
@@ -1210,17 +1212,18 @@ function MainView() {
   const glowTimerRef = useRef<number | null>(null);
 
   const openHistoryVault = useCallback(() => {
+    isOpeningHistoryRef.current = true;
     showHistoryVaultRef.current = true;
     setShowSlashMenu(false);
-    resizeForSlash(0);
     setVaultFilter("");
     setVaultActiveIdx(0);
     setShowHistoryVault(true);
     applyWindowHeight(HISTORY_HEIGHT);
     setTimeout(() => vaultInputRef.current?.focus(), 50);
-  }, [resizeForSlash, applyWindowHeight]);
+  }, [applyWindowHeight]);
 
   const closeHistoryVault = useCallback(() => {
+    isOpeningHistoryRef.current = false;
     showHistoryVaultRef.current = false;
     setShowHistoryVault(false);
     applyWindowHeight(getBaseHeight());
@@ -1328,8 +1331,8 @@ function MainView() {
         loadSecrets().then((secrets) => {
           setSettings({ ...newSettings, ...secrets });
         });
-        // Do not disrupt History Vault if it is already open!
-        if (!showHistoryVaultRef.current) {
+        // Do not disrupt History Vault if it is already open or currently opening!
+        if (!showHistoryVaultRef.current && !isOpeningHistoryRef.current) {
           setPrompt("");
           setHistoryIndex(-1);
           setShowHistoryVault(false);
@@ -1341,6 +1344,7 @@ function MainView() {
           // Capture selected text from target window
           invoke<string>("get_selected_text").then((text) => {
             setSelectedText(text || "");
+            if (showHistoryVaultRef.current || isOpeningHistoryRef.current) return;
             // Don't resize if preview panel is open
             setPreviewData((prev) => {
               if (prev) return prev; // keep preview size
@@ -1350,6 +1354,7 @@ function MainView() {
             });
           }).catch(() => {
             setSelectedText("");
+            if (showHistoryVaultRef.current || isOpeningHistoryRef.current) return;
             setPreviewData((prev) => {
               if (prev) return prev;
               applyWindowHeight(BASE_HEIGHT);
@@ -1367,7 +1372,7 @@ function MainView() {
         hasBeenFocusedRef.current = false;
         if (isOpeningSettingsRef.current) return;
         // Never auto-close on blur when user is viewing or searching the History Vault!
-        if (showHistoryVaultRef.current) return;
+        if (showHistoryVaultRef.current || isOpeningHistoryRef.current) return;
 
         // Skip if window is not even visible
         try {
@@ -1559,23 +1564,32 @@ function MainView() {
     }
   }, [previewData, settings.injectionMethod, settings.typingSpeed, t.spotlight.statusIdle, t.spotlight.statusError]);
 
+  const openHistoryVaultRef = useRef(openHistoryVault);
+  openHistoryVaultRef.current = openHistoryVault;
+  const closeHistoryVaultRef = useRef(closeHistoryVault);
+  closeHistoryVaultRef.current = closeHistoryVault;
+
   useEffect(() => {
     let unlistenToggle: (() => void) | undefined;
     let unlistenOpen: (() => void) | undefined;
 
     listen("toggle_history_vault", () => {
-      toggleHistoryVault();
+      if (showHistoryVaultRef.current) {
+        closeHistoryVaultRef.current();
+      } else {
+        openHistoryVaultRef.current();
+      }
     }).then(fn => { unlistenToggle = fn; });
 
     listen("open_history_vault", () => {
-      openHistoryVault();
+      openHistoryVaultRef.current();
     }).then(fn => { unlistenOpen = fn; });
 
     return () => {
       unlistenToggle?.();
       unlistenOpen?.();
     };
-  }, [toggleHistoryVault, openHistoryVault]);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

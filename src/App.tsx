@@ -8,7 +8,7 @@ import {
   buildLocalizedSystemPrompt,
   SystemContext,
 } from "./locales/i18n";
-import { SupportedLanguage, LanguageSetting } from "./locales/types";
+import { SupportedLanguage, LanguageSetting, LocalizedSlashCommand } from "./locales/types";
 
 export type { SystemContext };
 
@@ -609,28 +609,32 @@ function SettingsView() {
   );
 }
 
-// Slash Commands
-const SLASH_COMMANDS: { id: string; trigger: string; label: string; desc: string; template: string; isLocal?: boolean }[] = [
-  { id: "tr", trigger: "/tr", label: "Türkçe", desc: "Türkçeye çevir", template: "Aşağıdaki metni Türkçeye çevir. Sadece çeviriyi yaz:" },
-  { id: "en", trigger: "/en", label: "English", desc: "İngilizceye çevir", template: "Translate the following text to English. Only write the translation:" },
-  { id: "de", trigger: "/de", label: "Deutsch", desc: "Almancaya çevir", template: "Übersetze den folgenden Text ins Deutsche. Schreibe nur die Übersetzung:" },
-  { id: "fr", trigger: "/fr", label: "Français", desc: "Fransızcaya çevir", template: "Traduis le texte suivant en français. Écris uniquement la traduction:" },
-  { id: "es", trigger: "/es", label: "Español", desc: "İspanyolcaya çevir", template: "Traduce el siguiente texto al español. Escribe solo la traducción:" },
-  { id: "ja", trigger: "/ja", label: "日本語", desc: "Japoncaya çevir", template: "次のテキストを日本語に翻訳してください。翻訳のみを書いてください:" },
-  { id: "duzelt", trigger: "/düzelt", label: "Düzelt", desc: "Yazım/gramer düzelt", template: "Yazım ve dilbilgisi hatalarını düzelt:" },
-  { id: "ozetle", trigger: "/özetle", label: "Özetle", desc: "Kısa ve öz özetle", template: "Aşağıdaki metni kısa ve öz şekilde özetle:" },
-  { id: "acikla", trigger: "/açıkla", label: "Açıkla", desc: "Kodu/metni açıkla", template: "Aşağıdaki kodu/metni basit bir dille açıkla:" },
-  { id: "sadelestir", trigger: "/sadeleştir", label: "Sadeleştir", desc: "Kodu kısalt ve temizle", template: "Bu kodu daha okunabilir ve kısa hale getir:" },
-  { id: "test", trigger: "/test", label: "Test Yaz", desc: "Unit test oluştur", template: "Bu kod için unit test yaz:" },
-  { id: "komut", trigger: "/komut", label: "Komut Üret", desc: "Terminal / CLI komutu üret", template: "İstenen işlem için doğrudan çalıştırılacak terminal komutunu üret:" },
-  // Local transforms (no AI)
-  { id: "buyuk", trigger: "/büyük", label: "BÜYÜK", desc: "TAMAMI BÜYÜK HARF", template: "", isLocal: true },
-  { id: "kucuk", trigger: "/küçük", label: "küçük", desc: "tamamı küçük harf", template: "", isLocal: true },
-  { id: "baslik", trigger: "/başlık", label: "Başlık", desc: "Her Kelimenin İlk Harfi Büyük", template: "", isLocal: true },
-  { id: "say", trigger: "/say", label: "Say", desc: "Karakter · Kelime · Satır sayısı", template: "", isLocal: true },
-  { id: "slug", trigger: "/slug", label: "Slug", desc: "URL-uyumlu slug oluştur", template: "", isLocal: true },
-  { id: "json", trigger: "/json", label: "JSON", desc: "JSON pretty print", template: "", isLocal: true },
-];
+// Slash Commands Helpers
+function findMatchedSlashCommand(commands: LocalizedSlashCommand[], text: string): { cmd?: LocalizedSlashCommand; arg: string } {
+  const lower = text.toLowerCase();
+  for (const c of commands) {
+    const allTriggers = [c.trigger, ...c.aliases];
+    for (const trig of allTriggers) {
+      const tLower = trig.toLowerCase();
+      if (lower === tLower) {
+        return { cmd: c, arg: "" };
+      }
+      if (lower.startsWith(tLower + " ")) {
+        return { cmd: c, arg: text.slice(trig.length).trim() };
+      }
+    }
+  }
+  return { cmd: undefined, arg: "" };
+}
+
+function filterSlashCommands(commands: LocalizedSlashCommand[], filterText: string): LocalizedSlashCommand[] {
+  const filter = filterText.toLowerCase();
+  return commands.filter(c =>
+    c.trigger.slice(1).toLowerCase().startsWith(filter) ||
+    c.label.toLowerCase().includes(filter) ||
+    c.aliases.some(a => a.slice(1).toLowerCase().startsWith(filter))
+  );
+}
 
 // ─── Main Input Component ───
 function MainView() {
@@ -639,6 +643,7 @@ function MainView() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const currentLang = resolveLanguage(settings.language);
   const t = getTranslation(currentLang);
+  const slashCommands = t.slashCommands;
   const [statusText, setStatusText] = useState(() => t.spotlight.statusIdle);
   const [previewData, setPreviewData] = useState<{ original: string; result: string } | null>(null);
   const [secretsLoaded, setSecretsLoaded] = useState(false);
@@ -1004,22 +1009,26 @@ function MainView() {
     let result = "";
     switch (commandId) {
       case "buyuk":
+      case "upper":
         result = text.toLocaleUpperCase(currentLang === "tr" ? "tr" : "en");
         break;
       case "kucuk":
+      case "lower":
         result = text.toLocaleLowerCase(currentLang === "tr" ? "tr" : "en");
         break;
       case "baslik":
+      case "title":
         result = text.replace(/\S+/g, w => w.charAt(0).toLocaleUpperCase(currentLang === "tr" ? "tr" : "en") + w.slice(1).toLocaleLowerCase(currentLang === "tr" ? "tr" : "en"));
         break;
-      case "say": {
+      case "say":
+      case "count": {
         const chars = text.length;
         const words = text.trim().split(/\s+/).filter(Boolean).length;
         const lines = text.split("\n").length;
         setPrompt("");
         setSelectedText("");
         if (inputRef.current) inputRef.current.style.height = "auto";
-        setStatusText(`${chars} ${t.spotlight.chars} · ${words} ${t.spotlight.words} · ${lines} ${currentLang === 'tr' ? 'satır' : 'lines'}`);
+        setStatusText(`${chars} ${t.spotlight.chars} · ${words} ${t.spotlight.words} · ${lines} ${t.spotlight.lines}`);
         setTimeout(() => setStatusText(t.spotlight.statusIdle), 4000);
         return;
       }
@@ -1096,33 +1105,33 @@ function MainView() {
 
     const trimmed = effectivePrompt.trim();
 
-    // --- Snippet: /kaydet isim ---
-    const saveMatch = trimmed.match(/^\/kaydet\s+(.+)$/i);
+    // --- Snippet: /kaydet or /save name ---
+    const saveMatch = trimmed.match(/^\/(?:kaydet|save)\s+(.+)$/i);
     if (saveMatch) {
       const snippetName = saveMatch[1].trim();
       if (!selectedText) {
         setStatus("error");
-        setStatusText("Kaydetmek için önce metin seçin!");
+        setStatusText(t.spotlight.selectTextBeforeSave);
         return;
       }
       saveSnippet(snippetName, selectedText);
       setPrompt("");
       setSelectedText("");
       setStatus("idle");
-      setStatusText(`📌 "${snippetName}" kaydedildi`);
-      setTimeout(() => setStatusText("Hazır"), 2000);
+      setStatusText(`📌 "${snippetName}" ${t.spotlight.savedSnippet}`);
+      setTimeout(() => setStatusText(t.spotlight.statusIdle), 2000);
       return;
     }
 
-    // --- Snippet: /sil isim ---
-    const deleteMatch = trimmed.match(/^\/sil\s+(.+)$/i);
+    // --- Snippet: /sil or /delete name ---
+    const deleteMatch = trimmed.match(/^\/(?:sil|delete)\s+(.+)$/i);
     if (deleteMatch) {
       const snippetName = deleteMatch[1].trim();
       deleteSnippet(snippetName);
       setPrompt("");
       setStatus("idle");
-      setStatusText(`🗑️ "${snippetName}" silindi`);
-      setTimeout(() => setStatusText("Hazır"), 2000);
+      setStatusText(`🗑️ "${snippetName}" ${t.spotlight.deletedSnippet}`);
+      setTimeout(() => setStatusText(t.spotlight.statusIdle), 2000);
       return;
     }
 
@@ -1143,38 +1152,26 @@ function MainView() {
           speedMs: Number(settings.typingSpeed)
         });
         setStatus("idle");
-        setStatusText("Hazır");
+        setStatusText(t.spotlight.statusIdle);
       } catch (err: any) {
         setStatus("error");
-        setStatusText(err.message || "Hata");
+        setStatusText(err.message || t.spotlight.statusError);
         await invoke("show_window");
       }
       return;
     }
 
     // --- Snippet or Slash Command matching ---
-    // 1. Check if prompt starts with a known slash command trigger
-    let matchedCmd: typeof SLASH_COMMANDS[number] | undefined;
-    let cmdArg = "";
+    // 1. Check if prompt starts with a known slash command trigger or alias
+    const { cmd: matchedCmd, arg: cmdArg } = findMatchedSlashCommand(slashCommands, trimmed);
 
-    for (const c of SLASH_COMMANDS) {
-      if (trimmed.toLowerCase() === c.trigger.toLowerCase()) {
-        matchedCmd = c;
-        cmdArg = "";
-        break;
-      } else if (trimmed.toLowerCase().startsWith(c.trigger.toLowerCase() + " ")) {
-        matchedCmd = c;
-        cmdArg = trimmed.slice(c.trigger.length).trim();
-        break;
-      }
-    }
-
-    // 2. Partial slash match without space (e.g. user typed /ko or /t and pressed Enter)
+    // 2. Partial slash match without space (e.g. user typed /ko, /cm, /fi and pressed Enter)
     if (!matchedCmd && trimmed.startsWith("/") && !trimmed.includes(" ")) {
       const filter = trimmed.slice(1).toLowerCase();
-      const partialCmd = SLASH_COMMANDS.find(c =>
+      const partialCmd = slashCommands.find(c =>
         c.trigger.slice(1).toLowerCase().startsWith(filter) ||
-        c.label.toLowerCase().startsWith(filter)
+        c.label.toLowerCase().startsWith(filter) ||
+        c.aliases.some(a => a.slice(1).toLowerCase().startsWith(filter))
       );
       const matchedSnip = loadSnippets().find(s =>
         s.name.toLowerCase().startsWith(filter)
@@ -1196,10 +1193,10 @@ function MainView() {
             speedMs: Number(settings.typingSpeed)
           });
           setStatus("idle");
-          setStatusText("Hazır");
+          setStatusText(t.spotlight.statusIdle);
         } catch (err: any) {
           setStatus("error");
-          setStatusText(err.message || "Hata");
+          setStatusText(err.message || t.spotlight.statusError);
           await invoke("show_window");
         }
         return;
@@ -1219,7 +1216,7 @@ function MainView() {
         const textToTransform = cmdArg || selectedText;
         if (!textToTransform) {
           setStatus("error");
-          setStatusText("Dönüştürülecek bir metin girin veya seçin!");
+          setStatusText(t.spotlight.selectTextToTransform);
           return;
         }
         return handleLocalTransform(matchedCmd.id, textToTransform);
@@ -1228,21 +1225,21 @@ function MainView() {
       // AI Slash Commands
       if (!cmdArg && !selectedText) {
         setStatus("error");
-        setStatusText(`Lütfen bir istek yazın (örn: ${matchedCmd.trigger} ...)`);
+        setStatusText(`${t.spotlight.pleaseEnterPrompt} (${matchedCmd.trigger} ...)`);
         applySlashCommand(matchedCmd.trigger);
         return;
       }
 
       if (cmdArg && selectedText) {
-        finalPrompt = `Seçili metin:\n---\n${selectedText}\n---\n\nTalimat: ${matchedCmd.template} ${cmdArg}`;
+        finalPrompt = `${t.spotlight.selectedTextLabel}:\n---\n${selectedText}\n---\n\n${t.spotlight.instructionLabel}: ${matchedCmd.template} ${cmdArg}`;
       } else if (cmdArg) {
         finalPrompt = `${matchedCmd.template} ${cmdArg}`;
       } else {
-        finalPrompt = `Seçili metin:\n---\n${selectedText}\n---\n\nTalimat: ${matchedCmd.template}`;
+        finalPrompt = `${t.spotlight.selectedTextLabel}:\n---\n${selectedText}\n---\n\n${t.spotlight.instructionLabel}: ${matchedCmd.template}`;
       }
     } else {
       if (selectedText) {
-        finalPrompt = `Seçili metin:\n---\n${selectedText}\n---\n\nKomut: ${effectivePrompt}`;
+        finalPrompt = `${t.spotlight.selectedTextLabel}:\n---\n${selectedText}\n---\n\n${t.spotlight.instructionLabel}: ${effectivePrompt}`;
       } else {
         finalPrompt = effectivePrompt;
       }
@@ -1499,10 +1496,7 @@ function MainView() {
         {/* Slash Command Dropdown */}
         {showSlashMenu && (() => {
           const filter = prompt.slice(1).toLowerCase();
-          const filtered = SLASH_COMMANDS.filter(c =>
-            c.trigger.slice(1).toLowerCase().startsWith(filter) ||
-            c.label.toLowerCase().startsWith(filter)
-          );
+          const filtered = filterSlashCommands(slashCommands, filter);
           const snippets = loadSnippets().filter(s =>
             s.name.toLowerCase().startsWith(filter)
           );
@@ -1519,7 +1513,7 @@ function MainView() {
                   }}
                 >
                   <span className="slash-trigger">{cmd.trigger}</span>
-                  <span className="slash-desc">{t.slashCommands[cmd.id]?.desc || cmd.desc}</span>
+                  <span className="slash-desc">{cmd.desc}</span>
                 </div>
               ))}
               {filtered.length > 0 && snippets.length > 0 && (
@@ -1565,10 +1559,7 @@ function MainView() {
             // Slash menu logic
             if (val.startsWith("/") && !val.includes("\n") && !val.includes(" ")) {
               const filter = val.slice(1).toLowerCase();
-              const cmds = SLASH_COMMANDS.filter(c =>
-                c.trigger.slice(1).toLowerCase().startsWith(filter) ||
-                c.label.toLowerCase().startsWith(filter)
-              );
+              const cmds = filterSlashCommands(slashCommands, filter);
               const snips = loadSnippets().filter(s =>
                 s.name.toLowerCase().startsWith(filter)
               );
@@ -1585,10 +1576,7 @@ function MainView() {
             // Slash menu navigation
             if (showSlashMenu) {
               const filter = prompt.slice(1).toLowerCase();
-              const filtered = SLASH_COMMANDS.filter(c =>
-                c.trigger.slice(1).toLowerCase().startsWith(filter) ||
-                c.label.toLowerCase().startsWith(filter)
-              );
+              const filtered = filterSlashCommands(slashCommands, filter);
               const snips = loadSnippets().filter(s =>
                 s.name.toLowerCase().startsWith(filter)
               );
@@ -1650,7 +1638,7 @@ function MainView() {
             if (e.ctrlKey && e.key >= "1" && e.key <= "9" && selectedText) {
               e.preventDefault();
               const idx = parseInt(e.key) - 1;
-              const allCmds = SLASH_COMMANDS.filter(c => !c.isLocal);
+              const allCmds = slashCommands.filter(c => !c.isLocal);
               if (idx < allCmds.length) {
                 const cmd = allCmds[idx];
                 handleSend(cmd.template);

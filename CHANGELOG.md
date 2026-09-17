@@ -4,6 +4,17 @@
 
 ---
 
+## 📌 [2026-09-17 16:55] - GitHub Private Uzak Depo Oluşturuldu ve İlk Push Tamamlandı
+- **Kapsam / Modül:** DevOps, GitHub Remote, Sürüm Kontrolü
+- **Yapılan İşlemin Özeti:**
+  1. **GitHub Repository Açıldı:** GitHub CLI üzerinden `serhatbaykal/coretype-linux` adıyla Gizli (Private) depo oluşturuldu.
+  2. **Uzak Depo Eşlendi & Push Edildi:** `origin` bağlantısı `https://github.com/serhatbaykal/coretype-linux.git` olarak tanımlandı ve `main` dalı tüm geçmişiyle başarıyla push edildi.
+- **Etkilenen Dosyalar ve Satır Referansları:**
+  - Uzak Depo: `https://github.com/serhatbaykal/coretype-linux`
+- **Eklenen / Silinen Paketler:** Yok
+
+---
+
 ## 📌 [2026-09-17 16:47] - Git Sürüm Kontrolü ve Güvenli .gitignore Entegrasyonu
 - **Kapsam / Modül:** DevOps, Sürüm Kontrol Sistemi (Git), Güvenlik & Gizlilik
 - **Yapılan İşlemin Özeti:**
@@ -15,7 +26,8 @@
 - **Eklenen / Silinen Paketler:** Yok
 
 ---
-- **Kapsam / Modül:** React UI (`src/App.tsx`), Rust Backend (`src-tauri/src/lib.rs`), Pencere Yaşam Döngüsü
+
+## 📌 [2026-09-17 08:03] - Ayarlar Penceresi Açılışındaki Siyah Ekran (Flash) Sorununun Çözümü
 - **Yapılan İşlemin Özeti:**
   1. **Başlangıç Görünürlüğü (Zero Flash):** Hem React (`openSettings`) hem de Rust backend (`tray settings`) tarafında ayarlar penceresi `visible: false` olarak başlatıldı.
   2. **Senkron Gösterim & Odak:** React `SettingsView` bileşeni DOM'a mount edilip cam morfolojisi teması (`applyTheme`) uygulandıktan sonra (`useEffect` içinde 50ms gecikmeyle) `appWindow.show()` ve `appWindow.setFocus()` çağrıldı.

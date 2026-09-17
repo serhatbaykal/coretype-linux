@@ -48,6 +48,8 @@ export interface TranslationSchema {
     tabs: {
       general: string;
       models: string;
+      appearance: string;
+      history: string;
       shortcuts: string;
       snippets: string;
       about: string;

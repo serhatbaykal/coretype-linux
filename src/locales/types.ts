@@ -1,0 +1,130 @@
+export type SupportedLanguage = "tr" | "en";
+export type LanguageSetting = "system" | "tr" | "en";
+
+export interface TranslationSchema {
+  spotlight: {
+    placeholder: string;
+    placeholderHints: string[];
+    capturedSelection: string;
+    chars: string;
+    words: string;
+    statusIdle: string;
+    statusThinking: string;
+    statusTyping: string;
+    statusDone: string;
+    statusError: string;
+    statusProcessing: string;
+    statusInjecting: string;
+    statusPreviewHint: string;
+    selectTextToTransform: string;
+    invalidJson: string;
+    selectTextBeforeSave: string;
+    enterGeminiKey: string;
+    enterOpenaiKey: string;
+    pleaseEnterPrompt: string;
+    previewTitle: string;
+    previewOriginal: string;
+    previewResult: string;
+    previewInject: string;
+    previewCancel: string;
+    copySuccess: string;
+    onboardingTitle: string;
+    onboardingDesc: string;
+    onboardingOpenSettings: string;
+    onboardingLater: string;
+    noSnippets: string;
+    snippetHint: string;
+    errorTitle: string;
+    errorRestart: string;
+  };
+  settings: {
+    windowTitle: string;
+    windowSubtitle: string;
+    tabs: {
+      general: string;
+      models: string;
+      shortcuts: string;
+      snippets: string;
+      about: string;
+    };
+    general: {
+      languageLabel: string;
+      languageDesc: string;
+      langSystem: string;
+      langTr: string;
+      langEn: string;
+      typingSpeedLabel: string;
+      typingSpeedDesc: string;
+      injectionLabel: string;
+      injectionDesc: string;
+      methodHybrid: string;
+      methodHybridDesc: string;
+      methodTyping: string;
+      methodTypingDesc: string;
+      methodPaste: string;
+      methodPasteDesc: string;
+      previewModeLabel: string;
+      previewModeDesc: string;
+      autoCloseLabel: string;
+      autoCloseDesc: string;
+      accentColorLabel: string;
+      accentColorDesc: string;
+      opacityLabel: string;
+      opacityDesc: string;
+      autostartLabel: string;
+      autostartDesc: string;
+    };
+    models: {
+      providerLabel: string;
+      geminiKeyLabel: string;
+      geminiKeyHelp: string;
+      openaiKeyLabel: string;
+      openaiKeyHelp: string;
+      ollamaUrlLabel: string;
+      ollamaModelLabel: string;
+      saveSecretsBtn: string;
+      secretsSaved: string;
+      secretsError: string;
+      keyHidden: string;
+      keyPlaceholder: string;
+      clearKey: string;
+    };
+    shortcuts: {
+      globalToggle: string;
+      globalToggleDesc: string;
+      hideWindow: string;
+      hideWindowDesc: string;
+      submitPrompt: string;
+      submitPromptDesc: string;
+      previewConfirm: string;
+      previewConfirmDesc: string;
+    };
+    snippets: {
+      title: string;
+      desc: string;
+      addBtn: string;
+      prefixLabel: string;
+      contentLabel: string;
+      deleteBtn: string;
+      emptyList: string;
+    };
+    about: {
+      appName: string;
+      version: string;
+      description: string;
+      stack: string;
+      githubRepo: string;
+      copyInfo: string;
+    };
+    common: {
+      save: string;
+      saved: string;
+      close: string;
+      cancel: string;
+      delete: string;
+      reset: string;
+      copied: string;
+    };
+  };
+  slashCommands: Record<string, { label: string; desc: string }>;
+}

@@ -2,8 +2,18 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import {
+  resolveLanguage,
+  getTranslation,
+  buildLocalizedSystemPrompt,
+  SystemContext,
+} from "./locales/i18n";
+import { SupportedLanguage, LanguageSetting } from "./locales/types";
+
+export type { SystemContext };
 
 interface AppSettings {
+  language: LanguageSetting;
   provider: "gemini" | "openai" | "ollama";
   geminiKey: string;
   openaiKey: string;
@@ -18,62 +28,15 @@ interface AppSettings {
   autoCloseOnBlur: boolean;
 }
 
-export interface SystemContext {
-  os_name: string;
-  os_family: string;
-  package_manager: string;
-  desktop: string;
-  shell: string;
-  active_app: string;
-  active_title: string;
-  is_terminal: boolean;
-}
-
-export function buildSystemPrompt(sysCtx: SystemContext | null): string {
-  const baseInstructions =
-    "Sen sistem genelinde çalışan yüksek verimlilik odaklı bir AI asistanısın. Kullanıcının isteklerine doğrudan istenen nihai metin veya kod ile yanıt ver. Giriş cümlesi ('İşte istediğiniz kod:', 'Tabii ki' vb.), kapanış cümlesi veya ekstra nezaket/açıklama ifadeleri ekleme. Sadece doğrudan hedefe yazılacak saf çıktıyı üret.";
-
-  if (!sysCtx) {
-    return baseInstructions;
-  }
-
-  const envDetails: string[] = [];
-  if (sysCtx.os_name) {
-    envDetails.push(`- İşletim Sistemi: ${sysCtx.os_name} (${sysCtx.os_family} tabanlı, paket yöneticisi: ${sysCtx.package_manager})`);
-  }
-  if (sysCtx.desktop) {
-    envDetails.push(`- Masaüstü Ortamı: ${sysCtx.desktop}`);
-  }
-  if (sysCtx.shell) {
-    envDetails.push(`- Varsayılan Kabuk (Shell): ${sysCtx.shell}`);
-  }
-  if (sysCtx.active_app && sysCtx.active_app !== "none") {
-    envDetails.push(`- Hedef Aktif Pencere: ${sysCtx.active_app}${sysCtx.active_title ? ` ("${sysCtx.active_title}")` : ""}${sysCtx.is_terminal ? " [TERMINAL / CLI]" : ""}`);
-  }
-
-  const contextBlock = `[ORTAM VE SİSTEM BAĞLAMI]\n${envDetails.join("\n")}`;
-
-  let specificRules = "";
-  if (sysCtx.is_terminal) {
-    specificRules = `[TERMINAL / KOMUT SATIRI KURALLARI]:
-1. Şu an bir terminal penceresindesin (${sysCtx.active_app}, kabuk: ${sysCtx.shell}).
-2. Sistem/paket yönetimi komutları istendiğinde kesinlikle ${sysCtx.os_name} (${sysCtx.os_family}) ve ${sysCtx.shell} için geçerli komutlar üret.
-3. Paket kurulumu gerekiyorsa daima ${sysCtx.package_manager} kullan (kesinlikle Windows/cmd/powershell veya Debian/Ubuntu apt/apt-get komutları üretme!).
-4. Çıktıyı ASLA markdown kod bloğu (\`\`\` veya \`\`\`bash) içine alma, tırnak içine alma. Çıktı doğrudan terminal promptuna enjekte edilecektir. Tek satırlık veya zincirleme çalıştırılacak saf komutu ver.
-5. Asla hiçbir açıklama veya yorum ekleme.`;
-  } else {
-    specificRules = `[GENEL KURALLAR]:
-1. Sistem veya konsol komutları talep edilirse daima ${sysCtx.os_name} (${sysCtx.os_family}) mimarisine uygun komutlar üret.
-2. İstenen kod veya metni doğrudan temiz ve hazır olarak üret.`;
-  }
-
-  return `${baseInstructions}\n\n${contextBlock}\n\n${specificRules}`;
+export function buildSystemPrompt(sysCtx: SystemContext | null, lang: SupportedLanguage = "tr"): string {
+  return buildLocalizedSystemPrompt(sysCtx, lang);
 }
 
 // Keys stored securely in OS Credential Manager (not localStorage)
 const SECRET_KEYS = ["geminiKey", "openaiKey"] as const;
 
 const DEFAULT_SETTINGS: AppSettings = {
+  language: "system",
   provider: "gemini",
   geminiKey: "",
   openaiKey: "",
@@ -196,23 +159,38 @@ function saveHistory(history: string[]) {
 }
 
 // ─── Settings Window Component ───
-const INJECTION_OPTIONS = [
-  { value: "hybrid", label: "Karma (Akıllı)", desc: "X11 & Wayland için en uyumlu mod" },
-  { value: "typing", label: "Klavye Simülasyonu", desc: "Doğrudan tuş vuruşu simülasyonu" },
-  { value: "paste", label: "Panodan Yapıştır", desc: "Panoya kopyalayıp hızlı yapıştırma" },
-] as const;
 
 function SettingsView() {
   const [tempSettings, setTempSettings] = useState<AppSettings>(loadSettings);
   const [autoStart, setAutoStart] = useState(false);
   const [injectionMenuOpen, setInjectionMenuOpen] = useState(false);
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
   const injectionRef = useRef<HTMLDivElement>(null);
+  const langRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
+  const currentLang = resolveLanguage(tempSettings.language);
+  const t = getTranslation(currentLang);
+
+  const injectionOptions = [
+    { value: "hybrid" as const, label: t.settings.general.methodHybrid, desc: t.settings.general.methodHybridDesc },
+    { value: "typing" as const, label: t.settings.general.methodTyping, desc: t.settings.general.methodTypingDesc },
+    { value: "paste" as const, label: t.settings.general.methodPaste, desc: t.settings.general.methodPasteDesc },
+  ];
+
+  const languageOptions = [
+    { value: "system" as const, label: t.settings.general.langSystem },
+    { value: "tr" as const, label: t.settings.general.langTr },
+    { value: "en" as const, label: t.settings.general.langEn },
+  ];
+
+  // Close dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (injectionRef.current && !injectionRef.current.contains(event.target as Node)) {
         setInjectionMenuOpen(false);
+      }
+      if (langRef.current && !langRef.current.contains(event.target as Node)) {
+        setLangMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -250,6 +228,11 @@ function SettingsView() {
     for (const k of SECRET_KEYS) (safeSettings as any)[k] = "";
     localStorage.setItem("coretype_settings", JSON.stringify(safeSettings));
     applyTheme(tempSettings);
+
+    // Sync language with Rust backend tray menu
+    const resolvedLang = resolveLanguage(tempSettings.language);
+    await invoke("update_tray_language", { language: resolvedLang }).catch(() => {});
+
     getCurrentWindow().close();
   };
 
@@ -274,7 +257,7 @@ function SettingsView() {
               <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
-            Ayarlar
+            {t.settings.windowTitle}
           </div>
           <button className="settings-close" onClick={handleCancel}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -286,7 +269,7 @@ function SettingsView() {
 
         {/* AI Provider Section */}
         <div className="settings-section">
-          <span className="section-label">AI Sağlayıcı</span>
+          <span className="section-label">{t.settings.models.providerLabel}</span>
           <div className="provider-pills">
             {([
               { id: "gemini", label: "Gemini" },
@@ -309,7 +292,7 @@ function SettingsView() {
         {tempSettings.provider === "gemini" && (
           <div className="provider-config">
             <div className="settings-group">
-              <label className="settings-label">Gemini API Key</label>
+              <label className="settings-label">{t.settings.models.geminiKeyLabel}</label>
               <input
                 type="password"
                 className="settings-input"
@@ -324,7 +307,7 @@ function SettingsView() {
         {tempSettings.provider === "openai" && (
           <div className="provider-config">
             <div className="settings-group">
-              <label className="settings-label">OpenAI API Key</label>
+              <label className="settings-label">{t.settings.models.openaiKeyLabel}</label>
               <input
                 type="password"
                 className="settings-input"
@@ -340,7 +323,7 @@ function SettingsView() {
           <div className="provider-config">
             <div className="settings-row">
               <div className="settings-group">
-                <label className="settings-label">Sunucu URL</label>
+                <label className="settings-label">{t.settings.models.ollamaUrlLabel}</label>
                 <input
                   type="text"
                   className="settings-input"
@@ -350,7 +333,7 @@ function SettingsView() {
                 />
               </div>
               <div className="settings-group">
-                <label className="settings-label">Model Adı</label>
+                <label className="settings-label">{t.settings.models.ollamaModelLabel}</label>
                 <input
                   type="text"
                   className="settings-input"
@@ -363,14 +346,72 @@ function SettingsView() {
           </div>
         )}
 
-
+        {/* Language Section */}
+        <div className="settings-section">
+          <span className="section-label">{t.settings.general.languageLabel}</span>
+          <div className="settings-row">
+            <div className="settings-group">
+              <label className="settings-label">{t.settings.general.languageDesc}</label>
+              <div className="custom-select-wrapper" ref={langRef}>
+                <button
+                  type="button"
+                  className={`custom-select-button ${langMenuOpen ? "open" : ""}`}
+                  onClick={() => setLangMenuOpen(!langMenuOpen)}
+                >
+                  <span>
+                    {languageOptions.find((m) => m.value === (tempSettings.language || "system"))?.label || t.settings.general.langSystem}
+                  </span>
+                  <svg
+                    className={`custom-select-arrow ${langMenuOpen ? "rotated" : ""}`}
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+                {langMenuOpen && (
+                  <div className="custom-select-menu">
+                    {languageOptions.map((m) => (
+                      <div
+                        key={m.value}
+                        className={`custom-select-item ${(tempSettings.language || "system") === m.value ? "selected" : ""}`}
+                        onClick={() => {
+                          const newLang = m.value as LanguageSetting;
+                          setTempSettings({ ...tempSettings, language: newLang });
+                          setLangMenuOpen(false);
+                          const resolved = resolveLanguage(newLang);
+                          invoke("update_tray_language", { language: resolved }).catch(() => {});
+                        }}
+                      >
+                        <div className="custom-select-item-text">
+                          <span className="custom-select-item-label">{m.label}</span>
+                        </div>
+                        {(tempSettings.language || "system") === m.value && (
+                          <svg className="custom-select-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Writing Settings Section */}
         <div className="settings-section">
-          <span className="section-label">Yazım Ayarları</span>
+          <span className="section-label">{t.settings.general.injectionLabel}</span>
           <div className="settings-row">
             <div className="settings-group">
-              <label className="settings-label">Enjeksiyon Modu</label>
+              <label className="settings-label">{t.settings.general.injectionDesc}</label>
               <div className="custom-select-wrapper" ref={injectionRef}>
                 <button
                   type="button"
@@ -378,7 +419,7 @@ function SettingsView() {
                   onClick={() => setInjectionMenuOpen(!injectionMenuOpen)}
                 >
                   <span>
-                    {INJECTION_OPTIONS.find((m) => m.value === tempSettings.injectionMethod)?.label || "Karma (Akıllı)"}
+                    {injectionOptions.find((m) => m.value === tempSettings.injectionMethod)?.label || t.settings.general.methodHybrid}
                   </span>
                   <svg
                     className={`custom-select-arrow ${injectionMenuOpen ? "rotated" : ""}`}
@@ -396,7 +437,7 @@ function SettingsView() {
                 </button>
                 {injectionMenuOpen && (
                   <div className="custom-select-menu">
-                    {INJECTION_OPTIONS.map((m) => (
+                    {injectionOptions.map((m) => (
                       <div
                         key={m.value}
                         className={`custom-select-item ${tempSettings.injectionMethod === m.value ? "selected" : ""}`}
@@ -421,7 +462,7 @@ function SettingsView() {
               </div>
             </div>
             <div className="settings-group">
-              <label className="settings-label">Yazım Hızı (ms)</label>
+              <label className="settings-label">{t.settings.general.typingSpeedLabel}</label>
               <div className="settings-number-stepper">
                 <input
                   type="number"
@@ -464,10 +505,10 @@ function SettingsView() {
 
         {/* System Section */}
         <div className="settings-section">
-          <span className="section-label">Sistem</span>
+          <span className="section-label">{t.settings.tabs.general}</span>
           <div className="settings-row settings-system-row">
             <div className="settings-group">
-              <label className="settings-label">Sistemle Başlat</label>
+              <label className="settings-label">{t.settings.general.autostartLabel}</label>
               <label className="toggle-switch">
                 <input
                   type="checkbox"
@@ -490,7 +531,7 @@ function SettingsView() {
               </label>
             </div>
             <div className="settings-group">
-              <label className="settings-label">Yanıtı Önizle</label>
+              <label className="settings-label">{t.settings.general.previewModeLabel}</label>
               <label className="toggle-switch">
                 <input
                   type="checkbox"
@@ -501,7 +542,7 @@ function SettingsView() {
               </label>
             </div>
             <div className="settings-group">
-              <label className="settings-label">Odak Kaybında Kapat</label>
+              <label className="settings-label">{t.settings.general.autoCloseLabel}</label>
               <label className="toggle-switch">
                 <input
                   type="checkbox"
@@ -516,9 +557,9 @@ function SettingsView() {
 
         {/* Theme Section */}
         <div className="settings-section">
-          <span className="section-label">Tema</span>
+          <span className="section-label">{t.settings.general.accentColorLabel}</span>
           <div className="settings-group">
-            <label className="settings-label">Accent Rengi</label>
+            <label className="settings-label">{t.settings.general.accentColorDesc}</label>
             <div className="color-presets">
               {COLOR_PRESETS.map((p) => (
                 <div
@@ -543,7 +584,7 @@ function SettingsView() {
             </div>
           </div>
           <div className="settings-group" style={{ marginTop: 8 }}>
-            <label className="settings-label">Opaklık ({Math.round(tempSettings.opacity * 100)}%)</label>
+            <label className="settings-label">{t.settings.general.opacityLabel} ({Math.round(tempSettings.opacity * 100)}%)</label>
             <input
               type="range"
               className="opacity-slider"
@@ -561,8 +602,8 @@ function SettingsView() {
 
       {/* Action Buttons — always visible at bottom */}
       <div className="actions-row sticky-actions">
-        <button className="btn btn-secondary" onClick={handleCancel}>İptal</button>
-        <button className="btn btn-primary" onClick={handleSave}>Kaydet</button>
+        <button className="btn btn-secondary" onClick={handleCancel}>{t.settings.common.cancel}</button>
+        <button className="btn btn-primary" onClick={handleSave}>{t.settings.common.save}</button>
       </div>
     </div>
   );
@@ -595,11 +636,20 @@ const SLASH_COMMANDS: { id: string; trigger: string; label: string; desc: string
 function MainView() {
   const [prompt, setPrompt] = useState("");
   const [status, setStatus] = useState<"idle" | "thinking" | "writing" | "error">("idle");
-  const [statusText, setStatusText] = useState("Hazır");
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  const currentLang = resolveLanguage(settings.language);
+  const t = getTranslation(currentLang);
+  const [statusText, setStatusText] = useState(() => t.spotlight.statusIdle);
   const [previewData, setPreviewData] = useState<{ original: string; result: string } | null>(null);
   const [secretsLoaded, setSecretsLoaded] = useState(false);
   const [sysContext, setSysContext] = useState<SystemContext | null>(null);
+
+  // Keep idle status text in sync with language
+  useEffect(() => {
+    if (status === "idle") {
+      setStatusText(t.spotlight.statusIdle);
+    }
+  }, [t, status]);
 
   // Load secrets and system context on mount
   useEffect(() => {
@@ -658,22 +708,11 @@ function MainView() {
   const glowTimerRef = useRef<number | null>(null);
 
   // Typewriter placeholder hints
-  const PLACEHOLDER_HINTS = [
-    "CoreType'a sorun... ( / ile komut)",
-    "Çevirmek için /tr yazın...",
-    "Düzeltmek için /düzelt...",
-    "/büyük, /küçük, /slug deneyin...",
-    "Metin seçip Ctrl+Space deneyin...",
-    "Kodunuzu açıklatın: /açıkla",
-    "Özetlemek için /özetle...",
-    "Unit test yazdırın: /test",
-    "JSON formatlamak için /json...",
-    "Ctrl+1-9 ile hızlı komut...",
-  ];
-  const [typedPlaceholder, setTypedPlaceholder] = useState(PLACEHOLDER_HINTS[0]);
+  const placeholderHints = t.spotlight.placeholderHints;
+  const [typedPlaceholder, setTypedPlaceholder] = useState(placeholderHints[0]);
   const [twTick, setTwTick] = useState(0);
   const hintIndexRef = useRef(0);
-  const charIndexRef = useRef(PLACEHOLDER_HINTS[0].length);
+  const charIndexRef = useRef(placeholderHints[0].length);
   const phaseRef = useRef<"idle" | "deleting" | "typing">("idle");
 
   useEffect(() => {
@@ -688,14 +727,14 @@ function MainView() {
       } else if (phaseRef.current === "deleting") {
         if (charIndexRef.current > 0) {
           charIndexRef.current--;
-          const hint = PLACEHOLDER_HINTS[hintIndexRef.current];
+          const hint = placeholderHints[hintIndexRef.current % placeholderHints.length];
           setTypedPlaceholder(hint.slice(0, charIndexRef.current));
         } else {
-          hintIndexRef.current = (hintIndexRef.current + 1) % PLACEHOLDER_HINTS.length;
+          hintIndexRef.current = (hintIndexRef.current + 1) % placeholderHints.length;
           phaseRef.current = "typing";
         }
       } else if (phaseRef.current === "typing") {
-        const hint = PLACEHOLDER_HINTS[hintIndexRef.current];
+        const hint = placeholderHints[hintIndexRef.current % placeholderHints.length];
         if (charIndexRef.current < hint.length) {
           charIndexRef.current++;
           setTypedPlaceholder(hint.slice(0, charIndexRef.current));
@@ -707,7 +746,7 @@ function MainView() {
     }, delay);
 
     return () => clearTimeout(timer);
-  }, [selectedText, prompt, twTick]);
+  }, [twTick, selectedText, prompt, placeholderHints]);
 
   // Auto-resize textarea
   const autoResize = useCallback(() => {
@@ -884,13 +923,13 @@ function MainView() {
   const handleEscape = useCallback(async () => {
     setPrompt("");
     setStatus("idle");
-    setStatusText("Hazır");
+    setStatusText(t.spotlight.statusIdle);
     setShowSlashMenu(false);
     setPreviewData(null);
     resizeForSlash(0);
     if (inputRef.current) inputRef.current.style.height = "auto";
     await invoke("hide_window");
-  }, [resizeForSlash]);
+  }, [resizeForSlash, t.spotlight.statusIdle]);
 
   const confirmPreview = useCallback(async () => {
     if (!previewData) return;
@@ -904,13 +943,13 @@ function MainView() {
         speedMs: Number(settings.typingSpeed)
       });
       setStatus("idle");
-      setStatusText("Hazır");
+      setStatusText(t.spotlight.statusIdle);
     } catch (err: any) {
       setStatus("error");
-      setStatusText(err.message || "Hata");
+      setStatusText(err.message || t.spotlight.statusError);
       await invoke("show_window");
     }
-  }, [previewData, settings.injectionMethod, settings.typingSpeed]);
+  }, [previewData, settings.injectionMethod, settings.typingSpeed, t.spotlight.statusIdle, t.spotlight.statusError]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -942,7 +981,7 @@ function MainView() {
 
     new WebviewWindow("settings", {
       url: "/?page=settings",
-      title: "CoreType — Ayarlar",
+      title: `CoreType — ${t.settings.windowTitle}`,
       width: 900,
       height: 1000,
       resizable: false,
@@ -958,20 +997,20 @@ function MainView() {
   const handleLocalTransform = async (commandId: string, text: string) => {
     if (!text) {
       setStatus("error");
-      setStatusText("Dönüştürmek için metin seçin!");
+      setStatusText(t.spotlight.selectTextToTransform);
       return;
     }
 
     let result = "";
     switch (commandId) {
       case "buyuk":
-        result = text.toLocaleUpperCase("tr");
+        result = text.toLocaleUpperCase(currentLang === "tr" ? "tr" : "en");
         break;
       case "kucuk":
-        result = text.toLocaleLowerCase("tr");
+        result = text.toLocaleLowerCase(currentLang === "tr" ? "tr" : "en");
         break;
       case "baslik":
-        result = text.replace(/\S+/g, w => w.charAt(0).toLocaleUpperCase("tr") + w.slice(1).toLocaleLowerCase("tr"));
+        result = text.replace(/\S+/g, w => w.charAt(0).toLocaleUpperCase(currentLang === "tr" ? "tr" : "en") + w.slice(1).toLocaleLowerCase(currentLang === "tr" ? "tr" : "en"));
         break;
       case "say": {
         const chars = text.length;
@@ -980,8 +1019,8 @@ function MainView() {
         setPrompt("");
         setSelectedText("");
         if (inputRef.current) inputRef.current.style.height = "auto";
-        setStatusText(`${chars} karakter · ${words} kelime · ${lines} satır`);
-        setTimeout(() => setStatusText("Hazır"), 4000);
+        setStatusText(`${chars} ${t.spotlight.chars} · ${words} ${t.spotlight.words} · ${lines} ${currentLang === 'tr' ? 'satır' : 'lines'}`);
+        setTimeout(() => setStatusText(t.spotlight.statusIdle), 4000);
         return;
       }
       case "slug":
@@ -999,7 +1038,7 @@ function MainView() {
           result = JSON.stringify(JSON.parse(text), null, 2);
         } catch {
           setStatus("error");
-          setStatusText("Geçersiz JSON!");
+          setStatusText(t.spotlight.invalidJson);
           return;
         }
         break;
@@ -1021,10 +1060,10 @@ function MainView() {
         speedMs: Number(settings.typingSpeed)
       });
       setStatus("idle");
-      setStatusText("Hazır");
+      setStatusText(t.spotlight.statusIdle);
     } catch (err: any) {
       setStatus("error");
-      setStatusText(err.message || "Hata");
+      setStatusText(err.message || t.spotlight.statusError);
       await invoke("show_window");
     }
   };
@@ -1216,7 +1255,7 @@ function MainView() {
     setHistoryIndex(-1);
 
     setStatus("thinking");
-    setStatusText("İstek işleniyor...");
+    setStatusText(t.spotlight.statusProcessing);
     const currentPrompt = finalPrompt;
     setPrompt("");
     setSelectedText("");
@@ -1229,12 +1268,12 @@ function MainView() {
       // Validate API keys BEFORE hiding window
       if (settings.provider === "gemini" && !settings.geminiKey) {
         setStatus("error");
-        setStatusText("⚙️ Ayarlar → Gemini API Anahtarı girin");
+        setStatusText(t.spotlight.enterGeminiKey);
         return;
       }
       if (settings.provider === "openai" && !settings.openaiKey) {
         setStatus("error");
-        setStatusText("⚙️ Ayarlar → OpenAI API Anahtarı girin");
+        setStatusText(t.spotlight.enterOpenaiKey);
         return;
       }
 
@@ -1249,7 +1288,7 @@ function MainView() {
       } catch (e) {
         console.warn("[CoreType] Could not fetch system context:", e);
       }
-      const systemPrompt = buildSystemPrompt(currentSysCtx);
+      const systemPrompt = buildSystemPrompt(currentSysCtx, currentLang);
 
       let responseText = "";
 
@@ -1262,14 +1301,14 @@ function MainView() {
       }
 
       setStatus("writing");
-      setStatusText("Metin enjekte ediliyor...");
+      setStatusText(t.spotlight.statusInjecting);
       responseText = cleanLLMResponse(responseText);
 
       if (settings.previewMode) {
         // Preview mode: show result before injecting
         setPreviewData({ original: contextForPreview || effectivePrompt, result: responseText });
         setStatus("idle");
-        setStatusText("Önizleme — Enter: yaz, Esc: iptal");
+        setStatusText(t.spotlight.statusPreviewHint);
         await invoke("show_window");
         // Resize window for preview
         applyWindowHeight(PREVIEW_HEIGHT);
@@ -1280,12 +1319,12 @@ function MainView() {
           speedMs: Number(settings.typingSpeed)
         });
         setStatus("idle");
-        setStatusText("Hazır");
+        setStatusText(t.spotlight.statusIdle);
       }
     } catch (err: any) {
       console.error(err);
       setStatus("error");
-      setStatusText(err.message || "Hata oluştu");
+      setStatusText(err.message || t.spotlight.statusError);
       await invoke("show_window");
     }
   };
@@ -1394,10 +1433,10 @@ function MainView() {
         }}>
           <div style={{ fontSize: "22px" }}>👋</div>
           <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
-            CoreType'a hoş geldiniz!
+            {t.spotlight.onboardingTitle}
           </div>
           <div style={{ fontSize: "11px", color: "var(--text-secondary)", lineHeight: 1.5, maxWidth: "280px" }}>
-            Başlamak için bir AI sağlayıcı seçip API anahtarınızı girin.
+            {t.spotlight.onboardingDesc}
           </div>
           <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
             <button
@@ -1407,7 +1446,7 @@ function MainView() {
                 border: "none", background: "var(--accent-color)", color: "#fff", cursor: "pointer"
               }}
             >
-              ⚙️ Ayarları Aç
+              {t.spotlight.onboardingOpenSettings}
             </button>
             <button
               onClick={() => { localStorage.setItem("coretype_onboarding_dismissed", "1"); setOnboardingDismissed(true); }}
@@ -1417,7 +1456,7 @@ function MainView() {
                 color: "var(--text-secondary)", cursor: "pointer"
               }}
             >
-              Sonra
+              {t.spotlight.onboardingLater}
             </button>
           </div>
         </div>
@@ -1429,13 +1468,13 @@ function MainView() {
           <span className="logo-text">CORETYPE</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <button className="settings-toggle" onClick={openSettings} title="Ayarlar">
+          <button className="settings-toggle" onClick={openSettings} title={t.settings.windowTitle}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
           </button>
-          <button className="close-toggle" onClick={handleEscape} title="Kapat">
+          <button className="close-toggle" onClick={handleEscape} title={t.settings.common.close}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1452,7 +1491,7 @@ function MainView() {
             <polyline points="14 2 14 8 20 8"></polyline>
           </svg>
           <span className="context-text">{selectedText.length > 50 ? selectedText.slice(0, 50) + '…' : selectedText}</span>
-          <span className="context-stats">{selectedText.length} kar · {selectedText.trim().split(/\s+/).filter(Boolean).length} kel</span>
+          <span className="context-stats">{selectedText.length} {t.spotlight.chars} · {selectedText.trim().split(/\s+/).filter(Boolean).length} {t.spotlight.words}</span>
           <button className="context-clear" onClick={() => setSelectedText("")}>×</button>
         </div>
       )}
@@ -1480,7 +1519,7 @@ function MainView() {
                   }}
                 >
                   <span className="slash-trigger">{cmd.trigger}</span>
-                  <span className="slash-desc">{cmd.desc}</span>
+                  <span className="slash-desc">{t.slashCommands[cmd.id]?.desc || cmd.desc}</span>
                 </div>
               ))}
               {filtered.length > 0 && snippets.length > 0 && (
@@ -1633,7 +1672,7 @@ function MainView() {
           }}
           placeholder={
             selectedText
-              ? "Komut girin: /çevir, /düzelt, /özetle..."
+              ? (currentLang === "en" ? "Enter command: /en, /duzelt, /ozetle..." : "Komut girin: /çevir, /düzelt, /özetle...")
               : typedPlaceholder
           }
           rows={1}
@@ -1655,19 +1694,19 @@ function MainView() {
       {previewData && (
         <div className="preview-panel">
           <div className="preview-section">
-            <div className="preview-label original">📄 Orijinal</div>
+            <div className="preview-label original">📄 {t.spotlight.previewOriginal}</div>
             <div className="preview-text">{previewData.original}</div>
           </div>
           <div className="preview-section">
-            <div className="preview-label result">✨ Sonuç</div>
+            <div className="preview-label result">✨ {t.spotlight.previewResult}</div>
             <div className="preview-text">{previewData.result}</div>
           </div>
           <div className="preview-actions">
             <button className="preview-btn" onClick={() => handleEscape()}>
-              İptal <kbd>Esc</kbd>
+              {t.spotlight.previewCancel} <kbd>Esc</kbd>
             </button>
             <button className="preview-btn confirm" onClick={() => confirmPreview()}>
-              Yaz <kbd>Enter</kbd>
+              {t.spotlight.previewInject} <kbd>Enter</kbd>
             </button>
           </div>
         </div>
@@ -1735,7 +1774,9 @@ class ErrorBoundary extends React.Component<
           color: "var(--text-primary)", padding: "20px", textAlign: "center"
         }}>
           <div style={{ fontSize: "24px" }}>⚠️</div>
-          <div style={{ fontSize: "13px", fontWeight: 600 }}>Beklenmeyen bir hata oluştu</div>
+          <div style={{ fontSize: "13px", fontWeight: 600 }}>
+            {resolveLanguage(loadSettings().language) === "en" ? "An unexpected error occurred" : "Beklenmeyen bir hata oluştu"}
+          </div>
           <div style={{ fontSize: "11px", opacity: 0.6, maxWidth: "300px", wordBreak: "break-word" }}>
             {this.state.error}
           </div>
@@ -1747,7 +1788,7 @@ class ErrorBoundary extends React.Component<
               color: "var(--text-primary)", cursor: "pointer", fontSize: "12px"
             }}
           >
-            Yeniden Başlat
+            {resolveLanguage(loadSettings().language) === "en" ? "Restart" : "Yeniden Başlat"}
           </button>
         </div>
       );

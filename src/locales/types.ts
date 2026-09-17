@@ -131,7 +131,35 @@ export interface TranslationSchema {
       copied: string;
     };
   };
+  historyVault: {
+    title: string;
+    empty: string;
+    searchPlaceholder: string;
+    itemDeleted: string;
+    allCleared: string;
+    injectHint: string;
+    copyHint: string;
+    deleteHint: string;
+    closeHint: string;
+    clearHistoryBtn: string;
+    privacyWarning: string;
+    entriesCount: string;
+    aiType: string;
+    transformType: string;
+    viewHistoryHint: string;
+  };
   slashCommands: LocalizedSlashCommand[];
+}
+
+export interface HistoryEntry {
+  id: string;
+  timestamp: number;
+  prompt: string;
+  result: string;
+  type: "ai" | "transform";
+  provider?: string;
+  model?: string;
+  selectedContext?: string;
 }
 
 export interface LocalizedSlashCommand {

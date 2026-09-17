@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -8,7 +8,7 @@ import {
   buildLocalizedSystemPrompt,
   SystemContext,
 } from "./locales/i18n";
-import { SupportedLanguage, LanguageSetting, LocalizedSlashCommand } from "./locales/types";
+import { SupportedLanguage, LanguageSetting, LocalizedSlashCommand, HistoryEntry } from "./locales/types";
 
 export type { SystemContext };
 
@@ -147,15 +147,47 @@ async function saveSecrets(settings: AppSettings): Promise<void> {
   }
 }
 
-function loadHistory(): string[] {
+function loadHistoryVault(): HistoryEntry[] {
   try {
-    const h = localStorage.getItem("coretype_history");
-    return h ? JSON.parse(h) : [];
-  } catch { return []; }
+    const v = localStorage.getItem("coretype_history_vault");
+    if (v) return JSON.parse(v);
+    const oldH = localStorage.getItem("coretype_history");
+    if (oldH) {
+      const oldPrompts: string[] = JSON.parse(oldH);
+      return oldPrompts.map((p, idx) => ({
+        id: `legacy-${idx}-${Date.now()}`,
+        timestamp: Date.now() - (oldPrompts.length - idx) * 60000,
+        prompt: p,
+        result: "",
+        type: "ai" as const,
+      }));
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }
 
-function saveHistory(history: string[]) {
-  localStorage.setItem("coretype_history", JSON.stringify(history.slice(-MAX_HISTORY)));
+function saveHistoryVault(entries: HistoryEntry[]) {
+  localStorage.setItem("coretype_history_vault", JSON.stringify(entries.slice(0, MAX_HISTORY)));
+}
+
+function clearHistoryVault() {
+  localStorage.removeItem("coretype_history_vault");
+  localStorage.removeItem("coretype_history");
+}
+
+function formatRelativeTime(timestamp: number, lang: "tr" | "en"): string {
+  const diffSec = Math.floor((Date.now() - timestamp) / 1000);
+  if (diffSec < 60) return lang === "tr" ? "Şimdi" : "Just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} ${lang === "tr" ? "dk" : "m"}`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} ${lang === "tr" ? "sa" : "h"}`;
+  const diffDays = Math.floor(diffHour / 24);
+  if (diffDays < 7) return `${diffDays} ${lang === "tr" ? "g" : "d"}`;
+  const d = new Date(timestamp);
+  return `${d.getDate()}/${d.getMonth() + 1}`;
 }
 
 // ─── Settings Window Component ───
@@ -170,6 +202,8 @@ function SettingsView() {
 
   const currentLang = resolveLanguage(tempSettings.language);
   const t = getTranslation(currentLang);
+  const [historyCount, setHistoryCount] = useState(() => loadHistoryVault().length);
+  const [historyClearedToast, setHistoryClearedToast] = useState(false);
 
   const injectionOptions = [
     { value: "hybrid" as const, label: t.settings.general.methodHybrid, desc: t.settings.general.methodHybridDesc },
@@ -597,6 +631,39 @@ function SettingsView() {
           </div>
         </div>
 
+        {/* History Vault Section */}
+        <div className="settings-section">
+          <span className="section-label">{t.historyVault.title}</span>
+          <div className="history-settings-card">
+            <div className="history-settings-header">
+              <div className="history-vault-title-box">
+                <span className="settings-label" style={{ fontWeight: 600 }}>
+                  {historyCount} {t.historyVault.entriesCount}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="history-clear-btn"
+                onClick={() => {
+                  clearHistoryVault();
+                  setHistoryCount(0);
+                  setHistoryClearedToast(true);
+                  setTimeout(() => setHistoryClearedToast(false), 3000);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                {historyClearedToast ? t.historyVault.allCleared : t.historyVault.clearHistoryBtn}
+              </button>
+            </div>
+            <p className="history-disclaimer-text">
+              {t.historyVault.privacyWarning}
+            </p>
+          </div>
+        </div>
+
         {/* end of settings-panel scroll area */}
       </div>
 
@@ -668,10 +735,37 @@ function MainView() {
       .catch(() => {});
   }, []);
 
-  // Prompt history
-  const [history, setHistory] = useState<string[]>(loadHistory);
+  // History Vault
+  const [historyVault, setHistoryVault] = useState<HistoryEntry[]>(loadHistoryVault);
+  const [showHistoryVault, setShowHistoryVault] = useState(false);
+  const [vaultFilter, setVaultFilter] = useState("");
+  const [vaultActiveIdx, setVaultActiveIdx] = useState(0);
+  const vaultInputRef = useRef<HTMLInputElement>(null);
+
+  // Terminal-style prompt history derived from historyVault (most recent first)
+  const promptList = useMemo(() => {
+    const list: string[] = [];
+    for (const item of historyVault) {
+      if (item.prompt && !list.includes(item.prompt)) {
+        list.push(item.prompt);
+      }
+    }
+    return list;
+  }, [historyVault]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const savedPromptRef = useRef("");
+
+  // Filtered vault entries
+  const filteredVault = useMemo(() => {
+    if (!vaultFilter.trim()) return historyVault;
+    const f = vaultFilter.toLowerCase();
+    return historyVault.filter(item =>
+      item.prompt.toLowerCase().includes(f) ||
+      item.result.toLowerCase().includes(f) ||
+      (item.model && item.model.toLowerCase().includes(f)) ||
+      (item.provider && item.provider.toLowerCase().includes(f))
+    );
+  }, [historyVault, vaultFilter]);
 
   // Selected text context
   const [selectedText, setSelectedText] = useState("");
@@ -684,6 +778,7 @@ function MainView() {
   const BASE_HEIGHT = 260;
   const SELECTION_HEIGHT = 320;
   const PREVIEW_HEIGHT = 540;
+  const HISTORY_HEIGHT = 540;
 
   const SLASH_ITEM_HEIGHT = 40;
   const MAX_VISIBLE_ITEMS = 6;
@@ -711,6 +806,30 @@ function MainView() {
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const glowTimerRef = useRef<number | null>(null);
+
+  const openHistoryVault = useCallback(() => {
+    setShowSlashMenu(false);
+    resizeForSlash(0);
+    setVaultFilter("");
+    setVaultActiveIdx(0);
+    setShowHistoryVault(true);
+    applyWindowHeight(HISTORY_HEIGHT);
+    setTimeout(() => vaultInputRef.current?.focus(), 50);
+  }, [resizeForSlash, applyWindowHeight]);
+
+  const closeHistoryVault = useCallback(() => {
+    setShowHistoryVault(false);
+    applyWindowHeight(getBaseHeight());
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [getBaseHeight, applyWindowHeight]);
+
+  const toggleHistoryVault = useCallback(() => {
+    if (showHistoryVault) {
+      closeHistoryVault();
+    } else {
+      openHistoryVault();
+    }
+  }, [showHistoryVault, closeHistoryVault, openHistoryVault]);
 
   // Typewriter placeholder hints
   const placeholderHints = t.spotlight.placeholderHints;
@@ -764,6 +883,12 @@ function MainView() {
 
   // Autocomplete a slash command into the prompt without premature submission
   const applySlashCommand = useCallback((trigger: string) => {
+    if (trigger === "/geçmiş" || trigger === "/gecmis" || trigger === "/history") {
+      setPrompt("");
+      openHistoryVault();
+      return;
+    }
+
     const completed = `${trigger} `;
     setPrompt(completed);
     setShowSlashMenu(false);
@@ -777,7 +902,7 @@ function MainView() {
         autoResize();
       }
     }, 20);
-  }, [resizeForSlash, autoResize]);
+  }, [resizeForSlash, autoResize, applyWindowHeight]);
 
   // Reload settings and capture selected text when window gets focus
   const isDroppingRef = useRef(false);
@@ -801,6 +926,8 @@ function MainView() {
         });
         setPrompt("");
         setHistoryIndex(-1);
+        setShowHistoryVault(false);
+        setVaultFilter("");
 
         // Refresh system context from target window
         invoke<SystemContext>("get_system_context").then(setSysContext).catch(() => {});
@@ -926,6 +1053,10 @@ function MainView() {
 
   // Escape key handler
   const handleEscape = useCallback(async () => {
+    if (showHistoryVault) {
+      closeHistoryVault();
+      return;
+    }
     setPrompt("");
     setStatus("idle");
     setStatusText(t.spotlight.statusIdle);
@@ -934,7 +1065,72 @@ function MainView() {
     resizeForSlash(0);
     if (inputRef.current) inputRef.current.style.height = "auto";
     await invoke("hide_window");
-  }, [resizeForSlash, t.spotlight.statusIdle]);
+  }, [showHistoryVault, closeHistoryVault, resizeForSlash, t.spotlight.statusIdle]);
+
+  const injectVaultItem = useCallback(async (item: HistoryEntry) => {
+    const textToInject = item.result || item.prompt;
+    if (!textToInject) return;
+    closeHistoryVault();
+    try {
+      await invoke("hide_window");
+      await invoke("inject_text", {
+        text: textToInject,
+        method: settings.injectionMethod,
+        speedMs: Number(settings.typingSpeed)
+      });
+      setStatus("idle");
+      setStatusText(t.spotlight.statusIdle);
+    } catch (err: any) {
+      setStatus("error");
+      setStatusText(err.message || t.spotlight.statusError);
+      await invoke("show_window");
+    }
+  }, [closeHistoryVault, settings.injectionMethod, settings.typingSpeed, t.spotlight.statusIdle, t.spotlight.statusError]);
+
+  const handleVaultKeyDown = (e: React.KeyboardEvent, items: HistoryEntry[]) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeHistoryVault();
+      return;
+    }
+    if (items.length === 0) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setVaultActiveIdx(i => Math.min(i + 1, items.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setVaultActiveIdx(i => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const selected = items[vaultActiveIdx];
+      if (selected) injectVaultItem(selected);
+    } else if (e.key === "Delete") {
+      e.preventDefault();
+      const selected = items[vaultActiveIdx];
+      if (selected) {
+        setHistoryVault(prev => {
+          const next = prev.filter(entry => entry.id !== selected.id);
+          saveHistoryVault(next);
+          return next;
+        });
+        setStatusText(t.historyVault.itemDeleted);
+        setTimeout(() => setStatusText(t.spotlight.statusIdle), 2000);
+        if (vaultActiveIdx >= items.length - 1) {
+          setVaultActiveIdx(Math.max(0, items.length - 2));
+        }
+      }
+    } else if ((e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
+      const selected = items[vaultActiveIdx];
+      if (selected && selected.result) {
+        e.preventDefault();
+        navigator.clipboard.writeText(selected.result).then(() => {
+          setStatusText(t.spotlight.copySuccess);
+          setTimeout(() => setStatusText(t.spotlight.statusIdle), 2000);
+        }).catch(() => {});
+      }
+    }
+  };
 
   const confirmPreview = useCallback(async () => {
     if (!previewData) return;
@@ -962,6 +1158,10 @@ function MainView() {
         e.preventDefault();
         handleEscape();
       }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "h" || e.key === "H")) {
+        e.preventDefault();
+        toggleHistoryVault();
+      }
       // Preview mode: Enter to confirm inject
       if (e.key === "Enter" && previewData && !e.shiftKey) {
         e.preventDefault();
@@ -970,7 +1170,7 @@ function MainView() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleEscape, previewData, confirmPreview]);
+  }, [handleEscape, toggleHistoryVault, previewData, confirmPreview]);
 
 
   const openSettings = async () => {
@@ -1054,6 +1254,21 @@ function MainView() {
       default:
         return;
     }
+
+    // Save transform to history vault
+    const newEntry: HistoryEntry = {
+      id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: Date.now(),
+      prompt: `/${commandId} ${text}`,
+      result,
+      type: "transform",
+      selectedContext: text,
+    };
+    setHistoryVault(prev => {
+      const next = [newEntry, ...prev.filter(e => e.id !== newEntry.id)];
+      saveHistoryVault(next);
+      return next;
+    });
 
     setPrompt("");
     setSelectedText("");
@@ -1144,6 +1359,21 @@ function MainView() {
       setPrompt("");
       setShowSlashMenu(false);
       resizeForSlash(0);
+
+      // Save snippet injection to history vault
+      const newEntry: HistoryEntry = {
+        id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: Date.now(),
+        prompt: `/${matchedSnippet.name}`,
+        result: matchedSnippet.text,
+        type: "transform",
+      };
+      setHistoryVault(prev => {
+        const next = [newEntry, ...prev.filter(e => e.id !== newEntry.id)];
+        saveHistoryVault(next);
+        return next;
+      });
+
       try {
         await invoke("hide_window");
         await invoke("inject_text", {
@@ -1164,6 +1394,13 @@ function MainView() {
     // --- Snippet or Slash Command matching ---
     // 1. Check if prompt starts with a known slash command trigger or alias
     const { cmd: matchedCmd, arg: cmdArg } = findMatchedSlashCommand(slashCommands, trimmed);
+
+    // History vault slash command
+    if (matchedCmd && (matchedCmd.id === "gecmis" || matchedCmd.trigger === "/geçmiş" || matchedCmd.trigger === "/history")) {
+      setPrompt("");
+      openHistoryVault();
+      return;
+    }
 
     // 2. Partial slash match without space (e.g. user typed /ko, /cm, /fi and pressed Enter)
     if (!matchedCmd && trimmed.startsWith("/") && !trimmed.includes(" ")) {
@@ -1245,10 +1482,6 @@ function MainView() {
       }
     }
 
-    // Add to history
-    const newHistory = [...history.filter(h => h !== trimmed), trimmed];
-    setHistory(newHistory);
-    saveHistory(newHistory);
     setHistoryIndex(-1);
 
     setStatus("thinking");
@@ -1300,6 +1533,23 @@ function MainView() {
       setStatus("writing");
       setStatusText(t.spotlight.statusInjecting);
       responseText = cleanLLMResponse(responseText);
+
+      // Save to history vault
+      const newEntry: HistoryEntry = {
+        id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: Date.now(),
+        prompt: trimmed,
+        result: responseText,
+        type: "ai",
+        provider: settings.provider,
+        model: settings.provider === "gemini" ? "gemini-2.5-flash" : settings.provider === "openai" ? "gpt-4o-mini" : settings.ollamaModel,
+        selectedContext: contextForPreview || undefined,
+      };
+      setHistoryVault(prev => {
+        const next = [newEntry, ...prev.filter(e => e.id !== newEntry.id)];
+        saveHistoryVault(next);
+        return next;
+      });
 
       if (settings.previewMode) {
         // Preview mode: show result before injecting
@@ -1465,6 +1715,16 @@ function MainView() {
           <span className="logo-text">CORETYPE</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <button
+            className={`settings-toggle ${showHistoryVault ? "active" : ""}`}
+            onClick={toggleHistoryVault}
+            title={t.historyVault.title}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </button>
           <button className="settings-toggle" onClick={openSettings} title={t.settings.windowTitle}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
@@ -1480,259 +1740,378 @@ function MainView() {
         </div>
       </div>
 
-      {/* Input */}
-      {selectedText && (
-        <div className="context-badge">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-          </svg>
-          <span className="context-text">{selectedText.length > 50 ? selectedText.slice(0, 50) + '…' : selectedText}</span>
-          <span className="context-stats">{selectedText.length} {t.spotlight.chars} · {selectedText.trim().split(/\s+/).filter(Boolean).length} {t.spotlight.words}</span>
-          <button className="context-clear" onClick={() => setSelectedText("")}>×</button>
-        </div>
-      )}
-      <div className="input-wrapper">
-        {/* Slash Command Dropdown */}
-        {showSlashMenu && (() => {
-          const filter = prompt.slice(1).toLowerCase();
-          const filtered = filterSlashCommands(slashCommands, filter);
-          const snippets = loadSnippets().filter(s =>
-            s.name.toLowerCase().startsWith(filter)
-          );
-          if (filtered.length === 0 && snippets.length === 0) return null;
-          return (
-            <div className="slash-menu">
-              {filtered.map((cmd, i) => (
-                <div
-                  key={cmd.id}
-                  className={`slash-item${i === slashActiveIdx ? " active" : ""}`}
-                  onMouseEnter={() => setSlashActiveIdx(i)}
-                  onClick={() => {
-                    applySlashCommand(cmd.trigger);
-                  }}
-                >
-                  <span className="slash-trigger">{cmd.trigger}</span>
-                  <span className="slash-desc">{cmd.desc}</span>
-                </div>
-              ))}
-              {filtered.length > 0 && snippets.length > 0 && (
-                <div className="slash-separator" />
-              )}
-              {snippets.map((snip, i) => {
-                const idx = filtered.length + i;
-                return (
-                  <div
-                    key={`snip-${snip.name}`}
-                    className={`slash-item snippet-item${idx === slashActiveIdx ? " active" : ""}`}
-                    onMouseEnter={() => setSlashActiveIdx(idx)}
-                    onClick={async () => {
-                      setPrompt("");
-                      setShowSlashMenu(false);
-                      resizeForSlash(0);
-                      await invoke("hide_window");
-                      await invoke("inject_text", {
-                        text: snip.text,
-                        method: settings.injectionMethod,
-                        speedMs: Number(settings.typingSpeed)
-                      });
-                    }}
-                  >
-                    <span className="slash-trigger">📌 /{snip.name}</span>
-                    <span className="slash-desc">{snip.text.length > 40 ? snip.text.slice(0, 40) + "…" : snip.text}</span>
-                  </div>
-                );
-              })}
+      {showHistoryVault ? (
+        <div className="history-vault-view">
+          <div className="history-vault-header">
+            <div className="history-vault-title-box">
+              <span className="history-vault-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                {t.historyVault.title}
+              </span>
+              <span className="history-vault-badge">
+                {filteredVault.length} / {historyVault.length}
+              </span>
             </div>
-          );
-        })()}
+            <button
+              className="history-vault-close-btn"
+              onClick={closeHistoryVault}
+              title={t.historyVault.closeHint}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
 
-        <textarea
-          ref={inputRef}
-          className={`main-input${status === "thinking" ? " thinking-glow" : ""}`}
-          value={prompt}
-          onChange={(e) => {
-            const val = e.target.value;
-            setPrompt(val);
-            autoResize();
+          <div className="history-vault-search-box">
+            <svg className="history-vault-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input
+              ref={vaultInputRef}
+              type="text"
+              className="history-vault-search-input"
+              placeholder={t.historyVault.searchPlaceholder}
+              value={vaultFilter}
+              onChange={(e) => {
+                setVaultFilter(e.target.value);
+                setVaultActiveIdx(0);
+              }}
+              onKeyDown={(e) => handleVaultKeyDown(e, filteredVault)}
+              autoFocus
+            />
+          </div>
 
-            // Slash menu logic
-            if (val.startsWith("/") && !val.includes("\n") && !val.includes(" ")) {
-              const filter = val.slice(1).toLowerCase();
-              const cmds = filterSlashCommands(slashCommands, filter);
-              const snips = loadSnippets().filter(s =>
-                s.name.toLowerCase().startsWith(filter)
-              );
-              const total = cmds.length + snips.length;
-              setShowSlashMenu(true);
-              setSlashActiveIdx(0);
-              resizeForSlash(total);
-            } else {
-              setShowSlashMenu(false);
-              resizeForSlash(0);
-            }
-          }}
-          onKeyDown={(e) => {
-            // Slash menu navigation
-            if (showSlashMenu) {
+          <div className="history-vault-list">
+            {filteredVault.length === 0 ? (
+              <div className="history-vault-empty">
+                <span>
+                  {historyVault.length === 0
+                    ? t.historyVault.empty
+                    : (currentLang === "tr" ? "Aramanızla eşleşen kayıt bulunamadı." : "No matching entries found.")}
+                </span>
+              </div>
+            ) : (
+              filteredVault.map((item, idx) => (
+                <div
+                  key={item.id}
+                  className={`history-vault-item ${idx === vaultActiveIdx ? "active" : ""}`}
+                  onClick={() => injectVaultItem(item)}
+                  onMouseEnter={() => setVaultActiveIdx(idx)}
+                >
+                  <div className="history-vault-item-header">
+                    <span className="history-vault-item-prompt" title={item.prompt}>
+                      {item.prompt}
+                    </span>
+                    <div className="history-vault-item-meta">
+                      <span className={`history-vault-type-tag ${item.type}`}>
+                        {item.type === "ai" ? (item.model || t.historyVault.aiType) : t.historyVault.transformType}
+                      </span>
+                      <span className="history-vault-item-time">
+                        {formatRelativeTime(item.timestamp, currentLang)}
+                      </span>
+                    </div>
+                  </div>
+                  {item.result && (
+                    <div className="history-vault-item-result">
+                      {item.result}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="history-vault-footer">
+            <div className="history-vault-hints">
+              <div className="history-vault-hint-item">
+                <kbd>↑</kbd><kbd>↓</kbd>
+              </div>
+              <div className="history-vault-hint-item">
+                <kbd>{t.historyVault.injectHint.split(": ")[0]}</kbd> {t.historyVault.injectHint.split(": ")[1]}
+              </div>
+              <div className="history-vault-hint-item">
+                <kbd>{t.historyVault.copyHint.split(": ")[0]}</kbd> {t.historyVault.copyHint.split(": ")[1]}
+              </div>
+              <div className="history-vault-hint-item">
+                <kbd>{t.historyVault.deleteHint.split(": ")[0]}</kbd> {t.historyVault.deleteHint.split(": ")[1]}
+              </div>
+            </div>
+            <div className="history-vault-hint-item">
+              <kbd>{t.historyVault.closeHint.split(": ")[0]}</kbd> {t.historyVault.closeHint.split(": ")[1]}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Input */}
+          {selectedText && (
+            <div className="context-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+              </svg>
+              <span className="context-text">{selectedText.length > 50 ? selectedText.slice(0, 50) + '…' : selectedText}</span>
+              <span className="context-stats">{selectedText.length} {t.spotlight.chars} · {selectedText.trim().split(/\s+/).filter(Boolean).length} {t.spotlight.words}</span>
+              <button className="context-clear" onClick={() => setSelectedText("")}>×</button>
+            </div>
+          )}
+          <div className="input-wrapper">
+            {/* Slash Command Dropdown */}
+            {showSlashMenu && (() => {
               const filter = prompt.slice(1).toLowerCase();
               const filtered = filterSlashCommands(slashCommands, filter);
-              const snips = loadSnippets().filter(s =>
+              const snippets = loadSnippets().filter(s =>
                 s.name.toLowerCase().startsWith(filter)
               );
-              const totalItems = filtered.length + snips.length;
+              if (filtered.length === 0 && snippets.length === 0) return null;
+              return (
+                <div className="slash-menu">
+                  {filtered.map((cmd, i) => (
+                    <div
+                      key={cmd.id}
+                      className={`slash-item${i === slashActiveIdx ? " active" : ""}`}
+                      onMouseEnter={() => setSlashActiveIdx(i)}
+                      onClick={() => {
+                        applySlashCommand(cmd.trigger);
+                      }}
+                    >
+                      <span className="slash-trigger">{cmd.trigger}</span>
+                      <span className="slash-desc">{cmd.desc}</span>
+                    </div>
+                  ))}
+                  {filtered.length > 0 && snippets.length > 0 && (
+                    <div className="slash-separator" />
+                  )}
+                  {snippets.map((snip, i) => {
+                    const idx = filtered.length + i;
+                    return (
+                      <div
+                        key={`snip-${snip.name}`}
+                        className={`slash-item snippet-item${idx === slashActiveIdx ? " active" : ""}`}
+                        onMouseEnter={() => setSlashActiveIdx(idx)}
+                        onClick={async () => {
+                          setPrompt("");
+                          setShowSlashMenu(false);
+                          resizeForSlash(0);
+                          await invoke("hide_window");
+                          await invoke("inject_text", {
+                            text: snip.text,
+                            method: settings.injectionMethod,
+                            speedMs: Number(settings.typingSpeed)
+                          });
+                        }}
+                      >
+                        <span className="slash-trigger">📌 /{snip.name}</span>
+                        <span className="slash-desc">{snip.text.length > 40 ? snip.text.slice(0, 40) + "…" : snip.text}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setSlashActiveIdx(Math.min(slashActiveIdx + 1, totalItems - 1));
-                return;
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setSlashActiveIdx(Math.max(slashActiveIdx - 1, 0));
-                return;
-              } else if ((e.key === "Tab" || e.key === "Enter") && totalItems > 0) {
-                e.preventDefault();
-                if (slashActiveIdx < filtered.length) {
-                  // Command: Tab or Enter completes the command into input box
-                  const cmd = filtered[slashActiveIdx];
-                  applySlashCommand(cmd.trigger);
+            <textarea
+              ref={inputRef}
+              className={`main-input${status === "thinking" ? " thinking-glow" : ""}`}
+              value={prompt}
+              onChange={(e) => {
+                const val = e.target.value;
+                setPrompt(val);
+                if (historyIndex !== -1) setHistoryIndex(-1);
+                autoResize();
+
+                // Slash menu logic
+                if (val.startsWith("/") && !val.includes("\n") && !val.includes(" ")) {
+                  const filter = val.slice(1).toLowerCase();
+                  const cmds = filterSlashCommands(slashCommands, filter);
+                  const snips = loadSnippets().filter(s =>
+                    s.name.toLowerCase().startsWith(filter)
+                  );
+                  const total = cmds.length + snips.length;
+                  setShowSlashMenu(true);
+                  setSlashActiveIdx(0);
+                  resizeForSlash(total);
                 } else {
-                  // Snippet
-                  const snip = snips[slashActiveIdx - filtered.length];
                   setShowSlashMenu(false);
                   resizeForSlash(0);
-                  handleSend("/" + snip.name);
                 }
-                return;
-              } else if (e.key === "Escape") {
-                setShowSlashMenu(false);
-                resizeForSlash(0);
-                return;
-              }
-            }
+              }}
+              onKeyDown={(e) => {
+                // Toggle history vault
+                if ((e.ctrlKey || e.metaKey) && (e.key === "h" || e.key === "H")) {
+                  e.preventDefault();
+                  toggleHistoryVault();
+                  return;
+                }
 
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            } else if (e.key === "ArrowUp" && !prompt.includes("\n")) {
-              e.preventDefault();
-              if (history.length === 0) return;
-              if (historyIndex === -1) savedPromptRef.current = prompt;
-              const newIdx = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
-              setHistoryIndex(newIdx);
-              setPrompt(history[newIdx]);
-            } else if (e.key === "ArrowDown" && !prompt.includes("\n")) {
-              e.preventDefault();
-              if (historyIndex === -1) return;
-              if (historyIndex >= history.length - 1) {
-                setHistoryIndex(-1);
-                setPrompt(savedPromptRef.current);
-              } else {
-                const newIdx = historyIndex + 1;
-                setHistoryIndex(newIdx);
-                setPrompt(history[newIdx]);
-              }
-            }
+                // Slash menu navigation
+                if (showSlashMenu) {
+                  const filter = prompt.slice(1).toLowerCase();
+                  const filtered = filterSlashCommands(slashCommands, filter);
+                  const snips = loadSnippets().filter(s =>
+                    s.name.toLowerCase().startsWith(filter)
+                  );
+                  const totalItems = filtered.length + snips.length;
 
-            // Ctrl+1-9: Quick command shortcuts
-            if (e.ctrlKey && e.key >= "1" && e.key <= "9" && selectedText) {
-              e.preventDefault();
-              const idx = parseInt(e.key) - 1;
-              const allCmds = slashCommands.filter(c => !c.isLocal);
-              if (idx < allCmds.length) {
-                const cmd = allCmds[idx];
-                handleSend(cmd.template);
-              }
-              return;
-            }
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setSlashActiveIdx(Math.min(slashActiveIdx + 1, totalItems - 1));
+                    return;
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setSlashActiveIdx(Math.max(slashActiveIdx - 1, 0));
+                    return;
+                  } else if ((e.key === "Tab" || e.key === "Enter") && totalItems > 0) {
+                    e.preventDefault();
+                    if (slashActiveIdx < filtered.length) {
+                      // Command: Tab or Enter completes the command into input box
+                      const cmd = filtered[slashActiveIdx];
+                      applySlashCommand(cmd.trigger);
+                    } else {
+                      // Snippet
+                      const snip = snips[slashActiveIdx - filtered.length];
+                      setShowSlashMenu(false);
+                      resizeForSlash(0);
+                      handleSend("/" + snip.name);
+                    }
+                    return;
+                  } else if (e.key === "Escape") {
+                    setShowSlashMenu(false);
+                    resizeForSlash(0);
+                    return;
+                  }
+                }
 
-            // Keypress glow effect
-            if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
-              const el = inputRef.current;
-              if (el) {
-                el.classList.add("keypress-glow");
-                if (glowTimerRef.current) clearTimeout(glowTimerRef.current);
-                glowTimerRef.current = window.setTimeout(() => {
-                  el.classList.remove("keypress-glow");
-                }, 150);
-              }
-            }
-          }}
-          placeholder={
-            selectedText
-              ? (currentLang === "en" ? "Enter command: /en, /duzelt, /ozetle..." : "Komut girin: /çevir, /düzelt, /özetle...")
-              : typedPlaceholder
-          }
-          rows={1}
-          disabled={status === "thinking" || status === "writing"}
-        />
-        <button
-          className="send-button"
-          onClick={() => handleSend()}
-          disabled={!prompt.trim() || status === "thinking" || status === "writing"}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-          </svg>
-        </button>
-      </div>
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                } else if (e.key === "ArrowUp" && !prompt.includes("\n")) {
+                  e.preventDefault();
+                  if (promptList.length === 0) return;
+                  if (historyIndex === -1) savedPromptRef.current = prompt;
+                  const nextIdx = historyIndex === -1 ? 0 : Math.min(promptList.length - 1, historyIndex + 1);
+                  setHistoryIndex(nextIdx);
+                  setPrompt(promptList[nextIdx]);
+                } else if (e.key === "ArrowDown" && !prompt.includes("\n")) {
+                  e.preventDefault();
+                  if (historyIndex === -1) return;
+                  if (historyIndex === 0) {
+                    setHistoryIndex(-1);
+                    setPrompt(savedPromptRef.current);
+                  } else {
+                    const nextIdx = historyIndex - 1;
+                    setHistoryIndex(nextIdx);
+                    setPrompt(promptList[nextIdx]);
+                  }
+                }
 
-      {/* Preview Panel */}
-      {previewData && (
-        <div className="preview-panel">
-          <div className="preview-section">
-            <div className="preview-label original">📄 {t.spotlight.previewOriginal}</div>
-            <div className="preview-text">{previewData.original}</div>
-          </div>
-          <div className="preview-section">
-            <div className="preview-label result">✨ {t.spotlight.previewResult}</div>
-            <div className="preview-text">{previewData.result}</div>
-          </div>
-          <div className="preview-actions">
-            <button className="preview-btn" onClick={() => handleEscape()}>
-              {t.spotlight.previewCancel} <kbd>Esc</kbd>
+                // Ctrl+1-9: Quick command shortcuts
+                if (e.ctrlKey && e.key >= "1" && e.key <= "9" && selectedText) {
+                  e.preventDefault();
+                  const idx = parseInt(e.key) - 1;
+                  const allCmds = slashCommands.filter(c => !c.isLocal);
+                  if (idx < allCmds.length) {
+                    const cmd = allCmds[idx];
+                    handleSend(cmd.template);
+                  }
+                  return;
+                }
+
+                // Keypress glow effect
+                if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
+                  const el = inputRef.current;
+                  if (el) {
+                    el.classList.add("keypress-glow");
+                    if (glowTimerRef.current) clearTimeout(glowTimerRef.current);
+                    glowTimerRef.current = window.setTimeout(() => {
+                      el.classList.remove("keypress-glow");
+                    }, 150);
+                  }
+                }
+              }}
+              placeholder={
+                selectedText
+                  ? (currentLang === "en" ? "Enter command: /en, /duzelt, /ozetle..." : "Komut girin: /çevir, /düzelt, /özetle...")
+                  : typedPlaceholder
+              }
+              rows={1}
+              disabled={status === "thinking" || status === "writing"}
+            />
+            <button
+              className="send-button"
+              onClick={() => handleSend()}
+              disabled={!prompt.trim() || status === "thinking" || status === "writing"}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
             </button>
-            <button className="preview-btn confirm" onClick={() => confirmPreview()}>
-              {t.spotlight.previewInject} <kbd>Enter</kbd>
-            </button>
           </div>
-        </div>
-      )}
 
-      {/* Status Bar */}
-      {!showSlashMenu && !previewData && (
-        <div className="status-bar">
-          <div className="status-indicator">
-            <div className={`status-dot ${status}`} />
-            <span>{statusText}</span>
-          </div>
-          {sysContext?.active_app && sysContext.active_app !== "none" && (
-            <div style={{
-              fontSize: "11px",
-              opacity: 0.65,
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              letterSpacing: "0.02em"
-            }}>
-              <span>{sysContext.is_terminal ? "💻" : "🎯"}</span>
-              <span>{sysContext.active_app}</span>
-              {sysContext.is_terminal && sysContext.shell && (
-                <span style={{
-                  padding: "1px 6px",
-                  borderRadius: "4px",
-                  background: "var(--accent-glow)",
-                  color: "var(--accent-color)",
-                  fontSize: "10px",
-                  fontWeight: 600
+          {/* Preview Panel */}
+          {previewData && (
+            <div className="preview-panel">
+              <div className="preview-section">
+                <div className="preview-label original">📄 {t.spotlight.previewOriginal}</div>
+                <div className="preview-text">{previewData.original}</div>
+              </div>
+              <div className="preview-section">
+                <div className="preview-label result">✨ {t.spotlight.previewResult}</div>
+                <div className="preview-text">{previewData.result}</div>
+              </div>
+              <div className="preview-actions">
+                <button className="preview-btn" onClick={() => handleEscape()}>
+                  {t.spotlight.previewCancel} <kbd>Esc</kbd>
+                </button>
+                <button className="preview-btn confirm" onClick={() => confirmPreview()}>
+                  {t.spotlight.previewInject} <kbd>Enter</kbd>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Status Bar */}
+          {!showSlashMenu && !previewData && (
+            <div className="status-bar">
+              <div className="status-indicator">
+                <div className={`status-dot ${status}`} />
+                <span>{statusText}</span>
+              </div>
+              {sysContext?.active_app && sysContext.active_app !== "none" && (
+                <div style={{
+                  fontSize: "11px",
+                  opacity: 0.65,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  letterSpacing: "0.02em"
                 }}>
-                  {sysContext.shell}
-                </span>
+                  <span>{sysContext.is_terminal ? "💻" : "🎯"}</span>
+                  <span>{sysContext.active_app}</span>
+                  {sysContext.is_terminal && sysContext.shell && (
+                    <span style={{
+                      padding: "1px 6px",
+                      borderRadius: "4px",
+                      background: "var(--accent-glow)",
+                      color: "var(--accent-color)",
+                      fontSize: "10px",
+                      fontWeight: 600
+                    }}>
+                      {sysContext.shell}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

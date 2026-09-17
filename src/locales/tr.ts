@@ -5,14 +5,14 @@ export const tr: TranslationSchema = {
     placeholder: "CoreType'a bir şeyler sor veya bir komut ver...",
     placeholderHints: [
       "CoreType'a sorun... ( / ile komut)",
-      "Çevirmek için /tr yazın...",
-      "Düzeltmek için /düzelt...",
+      "Çeviri için: /tr veya /en...",
+      "Düzeltmek için: /düzelt veya /fix...",
+      "Komut üretmek için: /komut veya /cmd...",
+      "Açıklama için: /açıkla veya /explain...",
+      "Özetlemek için: /özetle veya /summarize...",
       "/büyük, /küçük, /slug deneyin...",
-      "Metin seçip Ctrl+Space deneyin...",
-      "Kodunuzu açıklatın: /açıkla",
-      "Özetlemek için /özetle...",
-      "Unit test yazdırın: /test",
-      "JSON formatlamak için /json...",
+      "Unit test yazdırma: /test...",
+      "JSON biçimlendirme: /json...",
       "Ctrl+1-9 ile hızlı komut...",
     ],
     capturedSelection: "Seçili metin alındı",
@@ -46,6 +46,11 @@ export const tr: TranslationSchema = {
     snippetHint: "Kullanım: Tab veya Enter ile seçin",
     errorTitle: "Beklenmeyen bir hata oluştu",
     errorRestart: "Yeniden Başlat",
+    lines: "satır",
+    savedSnippet: "kaydedildi",
+    deletedSnippet: "silindi",
+    selectedTextLabel: "Seçili metin",
+    instructionLabel: "Talimat",
   },
   settings: {
     windowTitle: "Ayarlar",
@@ -136,24 +141,157 @@ export const tr: TranslationSchema = {
       copied: "Kopyalandı!",
     },
   },
-  slashCommands: {
-    tr: { label: "Türkçe", desc: "Türkçeye çevir" },
-    en: { label: "English", desc: "İngilizceye çevir" },
-    de: { label: "Deutsch", desc: "Almancaya çevir" },
-    fr: { label: "Français", desc: "Fransızcaya çevir" },
-    es: { label: "Español", desc: "İspanyolcaya çevir" },
-    ja: { label: "日本語", desc: "Japoncaya çevir" },
-    duzelt: { label: "Düzelt", desc: "Yazım/gramer düzelt" },
-    ozetle: { label: "Özetle", desc: "Kısa ve öz özetle" },
-    acikla: { label: "Açıkla", desc: "Kodu/metni açıkla" },
-    sadelestir: { label: "Sadeleştir", desc: "Kodu kısalt ve temizle" },
-    test: { label: "Test Yaz", desc: "Unit test oluştur" },
-    komut: { label: "Komut Üret", desc: "Terminal / CLI komutu üret" },
-    buyuk: { label: "BÜYÜK", desc: "TAMAMI BÜYÜK HARF" },
-    kucuk: { label: "küçük", desc: "tamamı küçük harf" },
-    baslik: { label: "Başlık", desc: "Her Kelimenin İlk Harfi Büyük" },
-    say: { label: "Say", desc: "Karakter · Kelime · Satır sayısı" },
-    slug: { label: "Slug", desc: "URL-uyumlu slug oluştur" },
-    json: { label: "JSON", desc: "JSON pretty print" },
-  },
+  slashCommands: [
+    {
+      id: "tr",
+      trigger: "/tr",
+      aliases: ["/turkce"],
+      label: "Türkçe",
+      desc: "Türkçeye çevir",
+      template: "Aşağıdaki metni Türkçeye çevir. Sadece çeviriyi yaz:"
+    },
+    {
+      id: "en",
+      trigger: "/en",
+      aliases: ["/english", "/ingilizce"],
+      label: "English",
+      desc: "İngilizceye çevir",
+      template: "Translate the following text to English. Only write the translation:"
+    },
+    {
+      id: "de",
+      trigger: "/de",
+      aliases: ["/deutsch", "/almanca"],
+      label: "Deutsch",
+      desc: "Almancaya çevir",
+      template: "Übersetze den folgenden Text ins Deutsche. Schreibe nur die Übersetzung:"
+    },
+    {
+      id: "fr",
+      trigger: "/fr",
+      aliases: ["/francais", "/fransizca"],
+      label: "Français",
+      desc: "Fransızcaya çevir",
+      template: "Traduis le texte suivant en français. Écris uniquement la traduction:"
+    },
+    {
+      id: "es",
+      trigger: "/es",
+      aliases: ["/espanol", "/ispanyolca"],
+      label: "Español",
+      desc: "İspanyolcaya çevir",
+      template: "Traduce el siguiente texto al español. Escribe solo la traducción:"
+    },
+    {
+      id: "ja",
+      trigger: "/ja",
+      aliases: ["/japonca"],
+      label: "日本語",
+      desc: "Japoncaya çevir",
+      template: "次のテキストを日本語に翻訳してください。翻訳のみを書いてください:"
+    },
+    {
+      id: "duzelt",
+      trigger: "/düzelt",
+      aliases: ["/duzelt", "/fix", "/correct"],
+      label: "Düzelt",
+      desc: "Yazım/gramer düzelt",
+      template: "Yazım ve dilbilgisi hatalarını düzelt. Orijinal üslubu koru ve sadece düzeltilmiş metni yaz:"
+    },
+    {
+      id: "ozetle",
+      trigger: "/özetle",
+      aliases: ["/ozetle", "/summarize", "/sum"],
+      label: "Özetle",
+      desc: "Kısa ve öz özetle",
+      template: "Aşağıdaki metni kısa ve öz şekilde özetle:"
+    },
+    {
+      id: "acikla",
+      trigger: "/açıkla",
+      aliases: ["/acikla", "/explain"],
+      label: "Açıkla",
+      desc: "Kodu/metni açıkla",
+      template: "Aşağıdaki kodu/metni basit ve anlaşılır bir dille açıkla:"
+    },
+    {
+      id: "sadelestir",
+      trigger: "/sadeleştir",
+      aliases: ["/sadelestir", "/simplify", "/clean"],
+      label: "Sadeleştir",
+      desc: "Kodu kısalt ve temizle",
+      template: "Bu kodu daha okunabilir, sade ve temiz hale getir:"
+    },
+    {
+      id: "test",
+      trigger: "/test",
+      aliases: ["/tests", "/unit-test"],
+      label: "Test Yaz",
+      desc: "Unit test oluştur",
+      template: "Bu kod için kapsamlı unit test yaz:"
+    },
+    {
+      id: "komut",
+      trigger: "/komut",
+      aliases: ["/cmd", "/command"],
+      label: "Komut Üret",
+      desc: "Terminal / CLI komutu üret",
+      template: "İstenen işlem için doğrudan çalıştırılacak terminal komutunu üret. Sadece komutu yaz:"
+    },
+    // Local transforms (no AI)
+    {
+      id: "buyuk",
+      trigger: "/büyük",
+      aliases: ["/buyuk", "/upper", "/uppercase"],
+      label: "BÜYÜK",
+      desc: "TAMAMI BÜYÜK HARF",
+      template: "",
+      isLocal: true
+    },
+    {
+      id: "kucuk",
+      trigger: "/küçük",
+      aliases: ["/kucuk", "/lower", "/lowercase"],
+      label: "küçük",
+      desc: "tamamı küçük harf",
+      template: "",
+      isLocal: true
+    },
+    {
+      id: "baslik",
+      trigger: "/başlık",
+      aliases: ["/baslik", "/title", "/capitalize"],
+      label: "Başlık",
+      desc: "Her Kelimenin İlk Harfi Büyük",
+      template: "",
+      isLocal: true
+    },
+    {
+      id: "say",
+      trigger: "/say",
+      aliases: ["/count"],
+      label: "Say",
+      desc: "Karakter · Kelime · Satır sayısı",
+      template: "",
+      isLocal: true
+    },
+    {
+      id: "slug",
+      trigger: "/slug",
+      aliases: [],
+      label: "Slug",
+      desc: "URL-uyumlu slug oluştur",
+      template: "",
+      isLocal: true
+    },
+    {
+      id: "json",
+      trigger: "/json",
+      aliases: ["/pretty"],
+      label: "JSON",
+      desc: "JSON pretty print",
+      template: "",
+      isLocal: true
+    },
+  ],
 };

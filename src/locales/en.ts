@@ -5,13 +5,13 @@ export const en: TranslationSchema = {
     placeholder: "Ask CoreType anything or type a command...",
     placeholderHints: [
       "Ask CoreType... (type / for commands)",
-      "Type /en to translate...",
-      "Type /duzelt to fix grammar...",
-      "Try /buyuk, /kucuk, /slug...",
-      "Select text and press Ctrl+Space...",
-      "Explain code with /acikla...",
-      "Summarize with /ozetle...",
-      "Generate tests with /test...",
+      "Translate with /en or /tr...",
+      "Fix grammar with /fix...",
+      "Generate commands with /cmd...",
+      "Explain code with /explain...",
+      "Summarize with /summarize...",
+      "Try /upper, /lower, /slug...",
+      "Generate unit tests with /test...",
       "Format JSON with /json...",
       "Quick command with Ctrl+1-9...",
     ],
@@ -46,6 +46,11 @@ export const en: TranslationSchema = {
     snippetHint: "Usage: Press Tab or Enter to select",
     errorTitle: "An unexpected error occurred",
     errorRestart: "Restart",
+    lines: "lines",
+    savedSnippet: "saved",
+    deletedSnippet: "deleted",
+    selectedTextLabel: "Selected text",
+    instructionLabel: "Instruction",
   },
   settings: {
     windowTitle: "Settings",
@@ -136,24 +141,157 @@ export const en: TranslationSchema = {
       copied: "Copied!",
     },
   },
-  slashCommands: {
-    tr: { label: "Türkçe", desc: "Translate to Turkish" },
-    en: { label: "English", desc: "Translate to English" },
-    de: { label: "Deutsch", desc: "Translate to German" },
-    fr: { label: "Français", desc: "Translate to French" },
-    es: { label: "Español", desc: "Translate to Spanish" },
-    ja: { label: "日本語", desc: "Translate to Japanese" },
-    duzelt: { label: "Fix", desc: "Fix spelling & grammar" },
-    ozetle: { label: "Summarize", desc: "Concise summary" },
-    acikla: { label: "Explain", desc: "Explain code / text" },
-    sadelestir: { label: "Simplify", desc: "Shorten and clean code" },
-    test: { label: "Write Tests", desc: "Generate unit tests" },
-    komut: { label: "Generate Command", desc: "Generate CLI / terminal command" },
-    buyuk: { label: "UPPERCASE", desc: "ALL UPPERCASE" },
-    kucuk: { label: "lowercase", desc: "all lowercase" },
-    baslik: { label: "Title Case", desc: "Capitalize Every Word" },
-    say: { label: "Count", desc: "Count characters, words, lines" },
-    slug: { label: "Slug", desc: "Generate URL-safe slug" },
-    json: { label: "JSON", desc: "Format & pretty print JSON" },
-  },
+  slashCommands: [
+    {
+      id: "en",
+      trigger: "/en",
+      aliases: ["/english"],
+      label: "English",
+      desc: "Translate to English",
+      template: "Translate the following text to English. Only write the translation:"
+    },
+    {
+      id: "tr",
+      trigger: "/tr",
+      aliases: ["/turkish", "/turkce"],
+      label: "Türkçe",
+      desc: "Translate to Turkish",
+      template: "Translate the following text to Turkish. Only write the translation:"
+    },
+    {
+      id: "de",
+      trigger: "/de",
+      aliases: ["/german", "/deutsch"],
+      label: "Deutsch",
+      desc: "Translate to German",
+      template: "Übersetze den folgenden Text ins Deutsche. Schreibe nur die Übersetzung:"
+    },
+    {
+      id: "fr",
+      trigger: "/fr",
+      aliases: ["/french", "/francais"],
+      label: "Français",
+      desc: "Translate to French",
+      template: "Traduis le texte suivant en français. Écris uniquement la traduction:"
+    },
+    {
+      id: "es",
+      trigger: "/es",
+      aliases: ["/spanish", "/espanol"],
+      label: "Español",
+      desc: "Translate to Spanish",
+      template: "Traduce el siguiente texto al español. Escribe solo la traducción:"
+    },
+    {
+      id: "ja",
+      trigger: "/ja",
+      aliases: ["/japanese", "/japonca"],
+      label: "日本語",
+      desc: "Translate to Japanese",
+      template: "次のテキストを日本語に翻訳してください。翻訳のみを書いてください:"
+    },
+    {
+      id: "duzelt",
+      trigger: "/fix",
+      aliases: ["/correct", "/düzelt", "/duzelt"],
+      label: "Fix",
+      desc: "Fix spelling & grammar",
+      template: "Fix spelling and grammar errors in the following text. Preserve original tone and output only the corrected text:"
+    },
+    {
+      id: "ozetle",
+      trigger: "/summarize",
+      aliases: ["/sum", "/summary", "/özetle", "/ozetle"],
+      label: "Summarize",
+      desc: "Concise summary",
+      template: "Summarize the following text concisely. Capture the key points clearly:"
+    },
+    {
+      id: "acikla",
+      trigger: "/explain",
+      aliases: ["/açıkla", "/acikla"],
+      label: "Explain",
+      desc: "Explain code / text",
+      template: "Explain the following code or text in simple, clear terms:"
+    },
+    {
+      id: "sadelestir",
+      trigger: "/simplify",
+      aliases: ["/clean", "/sadeleştir", "/sadelestir"],
+      label: "Simplify",
+      desc: "Shorten and clean code",
+      template: "Refactor and simplify this code to make it cleaner and more readable:"
+    },
+    {
+      id: "test",
+      trigger: "/test",
+      aliases: ["/tests", "/unit-test"],
+      label: "Write Tests",
+      desc: "Generate unit tests",
+      template: "Write comprehensive unit tests for this code:"
+    },
+    {
+      id: "komut",
+      trigger: "/cmd",
+      aliases: ["/command", "/komut"],
+      label: "Command",
+      desc: "Generate CLI / terminal command",
+      template: "Generate the exact terminal/CLI command to run for the requested task. Output only the command:"
+    },
+    // Local transforms (no AI)
+    {
+      id: "buyuk",
+      trigger: "/upper",
+      aliases: ["/uppercase", "/büyük", "/buyuk"],
+      label: "UPPERCASE",
+      desc: "ALL UPPERCASE",
+      template: "",
+      isLocal: true
+    },
+    {
+      id: "kucuk",
+      trigger: "/lower",
+      aliases: ["/lowercase", "/küçük", "/kucuk"],
+      label: "lowercase",
+      desc: "all lowercase",
+      template: "",
+      isLocal: true
+    },
+    {
+      id: "baslik",
+      trigger: "/title",
+      aliases: ["/capitalize", "/başlık", "/baslik"],
+      label: "Title Case",
+      desc: "Capitalize Every Word",
+      template: "",
+      isLocal: true
+    },
+    {
+      id: "say",
+      trigger: "/count",
+      aliases: ["/say"],
+      label: "Count",
+      desc: "Count characters, words, lines",
+      template: "",
+      isLocal: true
+    },
+    {
+      id: "slug",
+      trigger: "/slug",
+      aliases: [],
+      label: "Slug",
+      desc: "Generate URL-safe slug",
+      template: "",
+      isLocal: true
+    },
+    {
+      id: "json",
+      trigger: "/json",
+      aliases: ["/pretty"],
+      label: "JSON",
+      desc: "Format & pretty print JSON",
+      template: "",
+      isLocal: true
+    },
+  ],
 };

@@ -36,6 +36,11 @@ export interface TranslationSchema {
     snippetHint: string;
     errorTitle: string;
     errorRestart: string;
+    lines: string;
+    savedSnippet: string;
+    deletedSnippet: string;
+    selectedTextLabel: string;
+    instructionLabel: string;
   };
   settings: {
     windowTitle: string;
@@ -126,5 +131,15 @@ export interface TranslationSchema {
       copied: string;
     };
   };
-  slashCommands: Record<string, { label: string; desc: string }>;
+  slashCommands: LocalizedSlashCommand[];
+}
+
+export interface LocalizedSlashCommand {
+  id: string;
+  trigger: string;
+  aliases: string[];
+  label: string;
+  desc: string;
+  template: string;
+  isLocal?: boolean;
 }

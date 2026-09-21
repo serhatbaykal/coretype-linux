@@ -86,38 +86,48 @@ if (w) {
 }
 console.warn("CT_ACT:" + res + "|||" + sx + "|||" + sy + "|||" + sw + "|||" + sh);
 "#;
-    let _ = std::fs::write("/tmp/ct_act.js", script);
-    let _ = std::process::Command::new("dbus-send")
-        .args([
-            "--session",
-            "--dest=org.kde.KWin",
-            "--type=method_call",
-            "/Scripting",
-            "org.kde.kwin.Scripting.loadScript",
-            "string:/tmp/ct_act.js",
-        ])
-        .output();
-    let _ = std::process::Command::new("dbus-send")
-        .args([
-            "--session",
-            "--dest=org.kde.KWin",
-            "--type=method_call",
-            "/Scripting",
-            "org.kde.kwin.Scripting.start",
-        ])
-        .output();
-    thread::sleep(Duration::from_millis(30));
+    let pid = std::process::id();
+    let script_path = std::env::var("XDG_RUNTIME_DIR")
+        .map(|dir| format!("{}/ct_act_{}.js", dir, pid))
+        .unwrap_or_else(|_| format!("/tmp/ct_act_{}.js", pid));
 
-    let _ = std::process::Command::new("dbus-send")
-        .args([
-            "--session",
-            "--dest=org.kde.KWin",
-            "--type=method_call",
-            "/Scripting",
-            "org.kde.kwin.Scripting.unloadScript",
-            "string:/tmp/ct_act.js",
-        ])
-        .output();
+    if let Err(e) = std::fs::write(&script_path, script) {
+        eprintln!("[CoreType] SECURITY WARNING: Failed to write KWin script to {}: {}", script_path, e);
+    } else {
+        let _ = std::process::Command::new("dbus-send")
+            .args([
+                "--session",
+                "--dest=org.kde.KWin",
+                "--type=method_call",
+                "/Scripting",
+                "org.kde.kwin.Scripting.loadScript",
+                &format!("string:{}", script_path),
+            ])
+            .output();
+        let _ = std::process::Command::new("dbus-send")
+            .args([
+                "--session",
+                "--dest=org.kde.KWin",
+                "--type=method_call",
+                "/Scripting",
+                "org.kde.kwin.Scripting.start",
+            ])
+            .output();
+        thread::sleep(Duration::from_millis(30));
+
+        let _ = std::process::Command::new("dbus-send")
+            .args([
+                "--session",
+                "--dest=org.kde.KWin",
+                "--type=method_call",
+                "/Scripting",
+                "org.kde.kwin.Scripting.unloadScript",
+                &format!("string:{}", script_path),
+            ])
+            .output();
+
+        let _ = std::fs::remove_file(&script_path);
+    }
 
     let mut is_term = false;
     let mut screen_rect = None;

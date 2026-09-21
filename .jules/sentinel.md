@@ -1,0 +1,4 @@
+## 2024-05-24 - [CRITICAL] Fix KWin Script Execution Vulnerability
+**Vulnerability:** A local privilege escalation / arbitrary code execution vulnerability existed where the application would write a KWin script to a hardcoded predictable path (`/tmp/ct_act.js`) and blindly execute it without checking for write errors. A local attacker could pre-create this file and make it un-writable by the user, causing the app to execute the attacker's script when run.
+**Learning:** Hardcoded predictable paths in `/tmp` are dangerous, especially when combined with missing error handling on write operations, as it allows local attackers to substitute malicious payloads.
+**Prevention:** Always use secure, user-specific paths (like `XDG_RUNTIME_DIR`) with unique filenames (e.g., appending PID or using a secure temporary file library) and ALWAYS check the result of write operations before executing the written file.

@@ -197,7 +197,7 @@ def test_history_vault():
             "result": "psycopg2 veya asyncpg kütüphanelerini kullanarak...",
             "type": "ai",
             "provider": "gemini",
-            "model": "gemini-2.5-flash"
+            "model": "gemini-3.8-flash"
         },
         {
             "id": "h-3",

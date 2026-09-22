@@ -86,7 +86,11 @@ if (w) {
 }
 console.warn("CT_ACT:" + res + "|||" + sx + "|||" + sy + "|||" + sw + "|||" + sh);
 "#;
-    let _ = std::fs::write("/tmp/ct_act.js", script);
+    let tmp_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".to_string());
+    let script_path = format!("{}/ct_act_{}.js", tmp_dir, std::process::id());
+
+    let _ = std::fs::write(&script_path, script);
+    let load_script_arg = format!("string:{}", script_path);
     let _ = std::process::Command::new("dbus-send")
         .args([
             "--session",
@@ -94,7 +98,7 @@ console.warn("CT_ACT:" + res + "|||" + sx + "|||" + sy + "|||" + sw + "|||" + sh
             "--type=method_call",
             "/Scripting",
             "org.kde.kwin.Scripting.loadScript",
-            "string:/tmp/ct_act.js",
+            load_script_arg.as_str(),
         ])
         .output();
     let _ = std::process::Command::new("dbus-send")
@@ -115,9 +119,11 @@ console.warn("CT_ACT:" + res + "|||" + sx + "|||" + sy + "|||" + sw + "|||" + sh
             "--type=method_call",
             "/Scripting",
             "org.kde.kwin.Scripting.unloadScript",
-            "string:/tmp/ct_act.js",
+            load_script_arg.as_str(),
         ])
         .output();
+
+    let _ = std::fs::remove_file(&script_path);
 
     let mut is_term = false;
     let mut screen_rect = None;

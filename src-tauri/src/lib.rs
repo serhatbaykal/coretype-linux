@@ -577,16 +577,13 @@ where
 
 fn paste_via_clipboard(app: &AppHandle, text: &str, is_terminal: bool) -> Result<(), String> {
     with_clipboard(app, |cb| {
-        // 1. Save original clipboard
-        let original_text = cb.get_text().unwrap_or_default();
-
-        // 2. Set new text to clipboard (kept alive persistently in TargetWindowState)
+        // Set new text to clipboard (kept alive persistently in TargetWindowState)
         cb.set_text(text.to_string())
             .map_err(|e| format!("Failed to write to clipboard: {}", e))?;
 
         thread::sleep(Duration::from_millis(60));
 
-        // 3. Send paste shortcut: Ctrl+Shift+V for terminal, Ctrl+V for standard
+        // Send paste shortcut: Ctrl+Shift+V for terminal, Ctrl+V for standard
         if is_terminal {
             eprintln!("[CoreType] Sending Ctrl+Shift+V (terminal paste)");
             send_shortcut(true, true, 'v')?;
@@ -595,18 +592,26 @@ fn paste_via_clipboard(app: &AppHandle, text: &str, is_terminal: bool) -> Result
             send_shortcut(true, false, 'v')?;
         }
 
-        thread::sleep(Duration::from_millis(300));
-
-        // 4. Restore original clipboard
-        let _ = cb.set_text(original_text);
-        thread::sleep(Duration::from_millis(30));
-
+        // Target application will paste the current clipboard text.
+        // We do not overwrite with old clipboard after 300ms, which prevents Wayland race conditions.
         Ok(())
     })
 }
 
 fn capture_selection(app: &AppHandle, is_terminal: bool) -> String {
     let res = with_clipboard(app, |cb| {
+        #[cfg(target_os = "linux")]
+        {
+            use arboard::{GetExtLinux, LinuxClipboardKind};
+            if let Ok(primary_text) = cb.get().clipboard(LinuxClipboardKind::Primary).text() {
+                let trimmed = primary_text.trim();
+                if !trimmed.is_empty() {
+                    eprintln!("[CoreType] Primary selection captured: {} chars", primary_text.len());
+                    return Ok(primary_text);
+                }
+            }
+        }
+
         let original_clipboard = cb.get_text().unwrap_or_default();
 
         // Clear clipboard so we only capture freshly selected text
@@ -624,7 +629,7 @@ fn capture_selection(app: &AppHandle, is_terminal: bool) -> String {
         thread::sleep(Duration::from_millis(150));
 
         let text = cb.get_text().unwrap_or_default();
-        eprintln!("[CoreType] Selection captured: {} chars", text.len());
+        eprintln!("[CoreType] Selection captured via copy shortcut: {} chars", text.len());
 
         // Restore original clipboard if nothing was selected
         if text.is_empty() && !original_clipboard.is_empty() {

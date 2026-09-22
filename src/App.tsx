@@ -721,7 +721,7 @@ function SettingsView() {
                         </button>
                       </div>
                       <span className="settings-item-desc" style={{ marginTop: "4px" }}>
-                        {t.settings.models.geminiKeyHelp}
+                        {t.settings.models.geminiKeyHelp} (Model: <code>gemini-3.8-flash</code>)
                       </span>
                     </div>
                   )}
@@ -2047,8 +2047,15 @@ function MainView() {
         finalPrompt = `${t.spotlight.selectedTextLabel}:\n---\n${selectedText}\n---\n\n${t.spotlight.instructionLabel}: ${matchedCmd.template}`;
       }
     } else {
+      if (!effectivePrompt && !selectedText) {
+        setStatus("error");
+        setStatusText(t.spotlight.pleaseEnterPrompt);
+        return;
+      }
       if (selectedText) {
-        finalPrompt = `${t.spotlight.selectedTextLabel}:\n---\n${selectedText}\n---\n\n${t.spotlight.instructionLabel}: ${effectivePrompt}`;
+        finalPrompt = effectivePrompt
+          ? `${t.spotlight.selectedTextLabel}:\n---\n${selectedText}\n---\n\n${t.spotlight.instructionLabel}: ${effectivePrompt}`
+          : `${t.spotlight.selectedTextLabel}:\n---\n${selectedText}\n---\n\n${t.spotlight.instructionLabel}: ${currentLang === "tr" ? "Lütfen yukarıdaki metni/kodu incele, varsa hatalarını düzelt veya tamamla." : "Please review the text/code above, fix any errors, or complete it."}`;
       } else {
         finalPrompt = effectivePrompt;
       }
@@ -2114,7 +2121,7 @@ function MainView() {
         result: responseText,
         type: "ai",
         provider: settings.provider,
-        model: settings.provider === "gemini" ? "gemini-2.5-flash" : settings.provider === "openai" ? "gpt-4o-mini" : settings.ollamaModel,
+        model: settings.provider === "gemini" ? "gemini-3.8-flash" : settings.provider === "openai" ? "gpt-4o-mini" : settings.ollamaModel,
         selectedContext: contextForPreview || undefined,
       };
       setHistoryVault(prev => {
@@ -2150,7 +2157,9 @@ function MainView() {
 
   // LLM API Calls with Dynamic Context Injection
   const callGeminiAPI = async (promptText: string, apiKey: string, systemPrompt: string): Promise<string> => {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
+    // Robust Gemini call targeting standard gemini-3.8-flash with thought filtering
+    const model = "gemini-3.8-flash";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
@@ -2172,7 +2181,16 @@ function MainView() {
       throw new Error(errorData.error?.message || t.spotlight.apiFailedGemini);
     }
     const data = await response.json();
-    const result = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidate = data.candidates?.[0];
+    if (!candidate) {
+      if (data.promptFeedback?.blockReason) {
+        throw new Error(`Gemini: ${data.promptFeedback.blockReason}`);
+      }
+      throw new Error(t.spotlight.apiEmptyGemini);
+    }
+    const parts = candidate.content?.parts || [];
+    const textParts = parts.filter((p: any) => p.text && !p.thought).map((p: any) => p.text);
+    const result = (textParts.length > 0 ? textParts.join("") : parts[0]?.text || "").trim();
     if (!result) throw new Error(t.spotlight.apiEmptyGemini);
     return result;
   };

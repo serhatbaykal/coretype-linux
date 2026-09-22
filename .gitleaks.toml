@@ -1,0 +1,23 @@
+# Gitleaks Configuration for CoreType Linux
+title = "CoreType Linux Gitleaks Config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore safe build artifacts, package locks, assets, and mock credentials"
+paths = [
+  '''package-lock\.json''',
+  '''Cargo\.lock''',
+  '''dist/.*''',
+  '''target/.*''',
+  '''\.agent/.*''',
+  '''icons/.*''',
+  '''public/.*''',
+  '''\.tempmediaStorage/.*''',
+  '''\.user_uploaded/.*'''
+]
+regexes = [
+  '''sk-ant-api03-placeholder.*''',
+  '''dummy_token_.*'''
+]

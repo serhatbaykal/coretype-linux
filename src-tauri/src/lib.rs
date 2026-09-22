@@ -1112,9 +1112,8 @@ fn inject_text(
     thread::sleep(Duration::from_millis(300));
 
     let use_paste = match method.as_str() {
-        "paste" => true,
         "typing" => false,
-        "hybrid" | _ => text.len() > 100 || text.contains('\n') || is_terminal,
+        _ => true,
     };
 
     if use_paste {

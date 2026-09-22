@@ -7,9 +7,17 @@ import {
   resolveLanguage,
   getTranslation,
   buildLocalizedSystemPrompt,
+  buildSystemActionPrompt,
+  parseDesktopActionJson,
   SystemContext,
 } from "./locales/i18n";
-import { SupportedLanguage, LanguageSetting, LocalizedSlashCommand, HistoryEntry } from "./locales/types";
+import {
+  SupportedLanguage,
+  LanguageSetting,
+  LocalizedSlashCommand,
+  HistoryEntry,
+  DesktopActionPayload,
+} from "./locales/types";
 
 export type { SystemContext };
 
@@ -101,8 +109,9 @@ function deleteSnippet(name: string) {
   localStorage.setItem("coretype_snippets", JSON.stringify(snippets));
 }
 
-// Check if this is the settings window
+// Check if this is the settings window or toast window
 const isSettingsPage = window.location.search.includes("page=settings");
+const isToastPage = window.location.search.includes("page=toast");
 
 function loadSettings(): AppSettings {
   const saved = localStorage.getItem("coretype_settings");
@@ -562,7 +571,7 @@ function SettingsView() {
                           onClick={() => setTempSettings(prev => ({ ...prev, typingSpeed: Number(prev.typingSpeed || 1) + 1 }))}
                           disabled={tempSettings.injectionMethod === "paste"}
                           tabIndex={-1}
-                          title="Artır"
+                          title={t.spotlight.tooltipIncrease}
                         >
                           <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="18 15 12 9 6 15" />
@@ -574,7 +583,7 @@ function SettingsView() {
                           onClick={() => setTempSettings(prev => ({ ...prev, typingSpeed: Math.max(1, Number(prev.typingSpeed || 1) - 1) }))}
                           disabled={tempSettings.injectionMethod === "paste" || Number(tempSettings.typingSpeed) <= 1}
                           tabIndex={-1}
-                          title="Azalt"
+                          title={t.spotlight.tooltipDecrease}
                         >
                           <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="6 9 12 15 18 9" />
@@ -696,7 +705,7 @@ function SettingsView() {
                           type="button"
                           className="password-toggle-btn"
                           onClick={() => setShowGeminiKey(!showGeminiKey)}
-                          title={showGeminiKey ? "Gizle" : "Göster"}
+                          title={showGeminiKey ? t.spotlight.tooltipHide : t.spotlight.tooltipShow}
                         >
                           {showGeminiKey ? (
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -732,7 +741,7 @@ function SettingsView() {
                           type="button"
                           className="password-toggle-btn"
                           onClick={() => setShowOpenAIKey(!showOpenAIKey)}
-                          title={showOpenAIKey ? "Gizle" : "Göster"}
+                          title={showOpenAIKey ? t.spotlight.tooltipHide : t.spotlight.tooltipShow}
                         >
                           {showOpenAIKey ? (
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1415,7 +1424,7 @@ function MainView() {
                   isDroppingRef.current = false;
                   setPrompt("");
                   setStatus("idle");
-                  setStatusText("Hazır");
+                  setStatusText(t.spotlight.statusIdle);
                   setShowSlashMenu(false);
                   setPreviewData(null);
                   resizeForSlash(0);
@@ -1761,6 +1770,123 @@ function MainView() {
 
     const trimmed = effectivePrompt.trim();
 
+    // --- Desktop Action & System Automation: Prompt starts with '!' ---
+    if (trimmed.startsWith("!")) {
+      const actionQuery = trimmed.slice(1).trim();
+      if (!actionQuery) {
+        setStatus("error");
+        setStatusText(t.desktopAction.actionExecuting);
+        return;
+      }
+
+      if (settings.provider === "gemini" && !settings.geminiKey) {
+        setStatus("error");
+        setStatusText(t.spotlight.enterGeminiKey);
+        return;
+      }
+      if (settings.provider === "openai" && !settings.openaiKey) {
+        setStatus("error");
+        setStatusText(t.spotlight.enterOpenaiKey);
+        return;
+      }
+
+      setPrompt("");
+      setSelectedText("");
+      if (inputRef.current) inputRef.current.style.height = "auto";
+
+      // 1. Immediately hide main window (CoreType spotlight)
+      await invoke("hide_window");
+
+      // 2. Fetch fresh system context
+      let currentSysCtx: SystemContext | null = sysContext;
+      try {
+        currentSysCtx = await invoke<SystemContext>("get_system_context");
+        setSysContext(currentSysCtx);
+      } catch (e) {
+        console.warn("[CoreType] Could not fetch system context for action:", e);
+      }
+
+      // 3. Obvious root / sudo check
+      const lowerQuery = actionQuery.toLowerCase();
+      const isObviousRoot =
+        /\b(sudo|su|pkexec|doas)\b/.test(lowerQuery) ||
+        /\b(rm\s+-rf\s+\/|chmod\s+777\s+\/|mkfs|dd\s+if=)/.test(lowerQuery);
+
+      if (isObviousRoot) {
+        const blockedPayload: DesktopActionPayload = {
+          action_type: "blocked_root",
+          title: t.desktopAction.sudoBlockedTitle,
+          message: t.desktopAction.sudoBlockedMessage,
+          icon: "shield",
+        };
+
+        const newEntry: HistoryEntry = {
+          id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: Date.now(),
+          prompt: trimmed,
+          result: blockedPayload.message,
+          type: "transform",
+        };
+        setHistoryVault((prev) => {
+          const next = [newEntry, ...prev.filter((e) => e.id !== newEntry.id)];
+          saveHistoryVault(next);
+          return next;
+        });
+
+        await invoke("execute_system_action", { action: blockedPayload });
+        setStatus("idle");
+        setStatusText(t.spotlight.statusIdle);
+        return;
+      }
+
+      // 4. Call LLM to parse natural language intent
+      try {
+        const systemActionPrompt = buildSystemActionPrompt(currentSysCtx, currentLang);
+        let rawResponse = "";
+
+        if (settings.provider === "gemini") {
+          rawResponse = await callGeminiAPI(actionQuery, settings.geminiKey, systemActionPrompt);
+        } else if (settings.provider === "openai") {
+          rawResponse = await callOpenAIAPI(actionQuery, settings.openaiKey, systemActionPrompt);
+        } else if (settings.provider === "ollama") {
+          rawResponse = await callOllamaAPI(settings.ollamaUrl, settings.ollamaModel, actionQuery, systemActionPrompt);
+        }
+
+        const parsedAction = parseDesktopActionJson(rawResponse, currentLang);
+
+        const newEntry: HistoryEntry = {
+          id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: Date.now(),
+          prompt: trimmed,
+          result: parsedAction.message || parsedAction.title,
+          type: "ai",
+          provider: settings.provider,
+        };
+        setHistoryVault((prev) => {
+          const next = [newEntry, ...prev.filter((e) => e.id !== newEntry.id)];
+          saveHistoryVault(next);
+          return next;
+        });
+
+        // 5. Execute action and display toast
+        await invoke("execute_system_action", { action: parsedAction });
+        setStatus("idle");
+        setStatusText(t.spotlight.statusIdle);
+      } catch (err: any) {
+        console.error("Desktop action failed:", err);
+        const errorPayload: DesktopActionPayload = {
+          action_type: "error",
+          title: t.desktopAction.commandFailed,
+          message: err.message || t.spotlight.statusError,
+          icon: "error",
+        };
+        await invoke("execute_system_action", { action: errorPayload });
+        setStatus("idle");
+        setStatusText(t.spotlight.statusIdle);
+      }
+      return;
+    }
+
     // --- Snippet: /kaydet or /save name ---
     const saveMatch = trimmed.match(/^\/(?:kaydet|save)\s+(.+)$/i);
     if (saveMatch) {
@@ -2043,11 +2169,11 @@ function MainView() {
     });
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.error?.message || "Gemini API isteği başarısız oldu");
+      throw new Error(errorData.error?.message || t.spotlight.apiFailedGemini);
     }
     const data = await response.json();
     const result = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!result) throw new Error("Gemini'den boş yanıt döndü");
+    if (!result) throw new Error(t.spotlight.apiEmptyGemini);
     return result;
   };
 
@@ -2065,11 +2191,11 @@ function MainView() {
     });
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.error?.message || "OpenAI API isteği başarısız oldu");
+      throw new Error(errorData.error?.message || t.spotlight.apiFailedOpenAI);
     }
     const data = await response.json();
     const result = data.choices?.[0]?.message?.content;
-    if (!result) throw new Error("OpenAI'dan boş yanıt döndü");
+    if (!result) throw new Error(t.spotlight.apiEmptyOpenAI);
     return result;
   };
 
@@ -2087,14 +2213,14 @@ function MainView() {
           ]
         })
       });
-      if (!response.ok) throw new Error("Ollama sunucusu hata döndü");
+      if (!response.ok) throw new Error(t.spotlight.apiFailedOllama);
       const data = await response.json();
       const result = data.message?.content;
-      if (!result) throw new Error("Ollama'dan boş yanıt döndü");
+      if (!result) throw new Error(t.spotlight.apiEmptyOllama);
       return result;
     } catch (err: any) {
-      if (err.message?.includes("Ollama")) throw err;
-      throw new Error("Ollama sunucusuna bağlanılamadı. Servisin açık olduğundan emin olun.");
+      if (err.message && (err.message === t.spotlight.apiFailedOllama || err.message === t.spotlight.apiEmptyOllama)) throw err;
+      throw new Error(t.spotlight.apiConnectOllama);
     }
   };
   // Check if API key is configured for current provider
@@ -2159,6 +2285,13 @@ function MainView() {
         <div className="logo-section">
           <div className="logo-icon" />
           <span className="logo-text">CORETYPE</span>
+          {prompt.trim().startsWith("!") && (
+            <div className="system-action-badge">
+              <span className="system-action-badge-dot" />
+              <span className="system-action-badge-icon">⚡</span>
+              <span className="system-action-badge-text">{t.desktopAction.badgeText}</span>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button
@@ -2307,6 +2440,7 @@ function MainView() {
               <button className="context-clear" onClick={() => setSelectedText("")}>×</button>
             </div>
           )}
+
           <div className="input-wrapper">
             {/* Slash Command Dropdown */}
             {showSlashMenu && (() => {
@@ -2610,8 +2744,172 @@ class ErrorBoundary extends React.Component<
   }
 }
 
+// ─── Toast Window Component (Desktop Actions) ───
+function ToastView() {
+  const [toast, setToast] = useState<DesktopActionPayload>({
+    action_type: "blocked_root",
+    title: "Yetki Sınırı",
+    message: "Bu işlem yönetici yetkisi gerektirir. Güvenliğiniz için CoreType sistem dosyalarına ve root komutlarına dokunmaz.",
+    icon: "shield",
+  });
+  const [activeKey, setActiveKey] = useState(0);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<DesktopActionPayload>("display_toast", (event) => {
+      if (event.payload) {
+        setToast(event.payload);
+        setActiveKey((k) => k + 1);
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        invoke("hide_toast").catch(() => {});
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      unlisten?.();
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  const handleDismiss = () => {
+    invoke("hide_toast").catch(() => {});
+  };
+
+  const getIconDetails = () => {
+    switch (toast.icon) {
+      case "shield":
+        return {
+          color: "#f59e0b",
+          svg: (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          ),
+        };
+      case "volume":
+        return {
+          color: "#06b6d4",
+          svg: (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+            </svg>
+          ),
+        };
+      case "media":
+        return {
+          color: "#14b8a6",
+          svg: (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polygon points="10 8 16 12 10 16 10 8"/>
+            </svg>
+          ),
+        };
+      case "lock":
+        return {
+          color: "#3b82f6",
+          svg: (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          ),
+        };
+      case "error":
+        return {
+          color: "#ef4444",
+          svg: (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="15" y1="9" x2="9" y2="15"/>
+              <line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+          ),
+        };
+      case "terminal":
+      default:
+        return {
+          color: "#10b981",
+          svg: (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="4 17 10 11 4 5"/>
+              <line x1="12" y1="19" x2="20" y2="19"/>
+            </svg>
+          ),
+        };
+    }
+  };
+
+  const iconInfo = getIconDetails();
+
+  return (
+    <div className="toast-window-container" onClick={handleDismiss}>
+      <div
+        className="toast-card"
+        style={{
+          boxShadow: `0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px ${iconInfo.color}22`,
+          borderColor: `${iconInfo.color}33`,
+        }}
+      >
+        <div className="toast-header-row">
+          <div
+            className="toast-icon-wrap"
+            style={{
+              color: iconInfo.color,
+              backgroundColor: `${iconInfo.color}18`,
+              borderColor: `${iconInfo.color}33`,
+            }}
+          >
+            {iconInfo.svg}
+          </div>
+          <div className="toast-text-area">
+            <div className="toast-title">{toast.title}</div>
+            <div className="toast-message" title={toast.message}>
+              {toast.message}
+            </div>
+          </div>
+          <button
+            className="toast-close-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDismiss();
+            }}
+            aria-label="Close"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="toast-progress-track">
+          <div
+            key={activeKey}
+            className="toast-progress-fill"
+            style={{ backgroundColor: iconInfo.color }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Router ───
 function App() {
+  if (isToastPage) return <ToastView />;
   if (isSettingsPage) return <SettingsView />;
   return (
     <ErrorBoundary>

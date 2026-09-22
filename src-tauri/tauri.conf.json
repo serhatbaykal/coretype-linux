@@ -22,6 +22,20 @@
         "visible": false,
         "skipTaskbar": true,
         "center": false
+      },
+      {
+        "label": "toast",
+        "title": "CoreType Toast",
+        "url": "/?page=toast",
+        "width": 460,
+        "height": 74,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "skipTaskbar": true,
+        "center": false
       }
     ],
     "security": {

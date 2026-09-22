@@ -1,0 +1,4 @@
+# CoreType Linux — uinput virtual device permissions
+# Grants the active physical console user read/write access to /dev/uinput
+# for keystroke simulation without requiring root privileges.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

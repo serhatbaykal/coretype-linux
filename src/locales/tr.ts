@@ -52,6 +52,17 @@ export const tr: TranslationSchema = {
     deletedSnippet: "silindi",
     selectedTextLabel: "Seçili metin",
     instructionLabel: "Talimat",
+    apiFailedGemini: "Gemini API isteği başarısız oldu",
+    apiEmptyGemini: "Gemini'den boş yanıt döndü",
+    apiFailedOpenAI: "OpenAI API isteği başarısız oldu",
+    apiEmptyOpenAI: "OpenAI'dan boş yanıt döndü",
+    apiFailedOllama: "Ollama sunucusu hata döndü",
+    apiEmptyOllama: "Ollama'dan boş yanıt döndü",
+    apiConnectOllama: "Ollama sunucusuna bağlanılamadı. Servisin açık olduğundan emin olun.",
+    tooltipIncrease: "Artır",
+    tooltipDecrease: "Azalt",
+    tooltipShow: "Göster",
+    tooltipHide: "Gizle",
   },
   settings: {
     windowTitle: "Ayarlar",
@@ -129,7 +140,7 @@ export const tr: TranslationSchema = {
     about: {
       appName: "CoreType for Linux",
       version: "Sürüm 0.1.0 (Wayland / X11 Native)",
-      description: "Linux masaüstü için optimize edilmiş, yerel pencere yöneticisi (KWin) entegrasyonlu ve gizlilik odaklı akıllı yazım asistanı.",
+      description: "Linux masaüstü için optimize edilmiş, yerel pencere yöneticisi entegrasyonlu ve gizlilik odaklı akıllı yazım asistanı.",
       stack: "Tauri v2 • React 19 • Rust • Linux Desktop",
       githubRepo: "GitHub Kaynak Kodu (github.com/serhatbaykal/coretype-linux)",
       copyInfo: "Sistem Bilgisini Kopyala",
@@ -160,6 +171,15 @@ export const tr: TranslationSchema = {
     aiType: "Yapay Zeka",
     transformType: "Yerel Dönüşüm",
     viewHistoryHint: "Geçmiş için: /geçmiş veya Ctrl+H",
+  },
+  desktopAction: {
+    badgeText: "Sistem Eylemi",
+    actionExecuting: "Masaüstü eylemi yürütülüyor...",
+    sudoBlockedTitle: "Yetki Sınırı",
+    sudoBlockedMessage: "Bu işlem yönetici yetkisi gerektirir. Güvenliğiniz için CoreType sistem dosyalarına ve root komutlarına dokunmaz.",
+    commandSuccess: "Eylem başarıyla tamamlandı",
+    commandFailed: "Eylem yürütülürken hata oluştu",
+    dismissHint: "Kapatmak için tıklayın veya Esc",
   },
   slashCommands: [
     {

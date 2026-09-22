@@ -1,0 +1,21 @@
+[Desktop Entry]
+Name=CoreType
+Comment=AI-Powered System-Wide Typing Assistant for Linux
+Exec=coretype
+Icon=coretype
+Terminal=false
+Type=Application
+Categories=Utility;Accessibility;Office;
+Actions=Settings;History;Toggle;
+
+[Desktop Action Settings]
+Name=Ayarlar / Settings
+Exec=coretype --settings
+
+[Desktop Action History]
+Name=Geçmiş Kasası / History Vault
+Exec=coretype --history
+
+[Desktop Action Toggle]
+Name=Spotlight Aç/Kapat (Toggle)
+Exec=coretype --toggle

@@ -52,6 +52,17 @@ export const en: TranslationSchema = {
     deletedSnippet: "deleted",
     selectedTextLabel: "Selected text",
     instructionLabel: "Instruction",
+    apiFailedGemini: "Gemini API request failed",
+    apiEmptyGemini: "Empty response received from Gemini",
+    apiFailedOpenAI: "OpenAI API request failed",
+    apiEmptyOpenAI: "Empty response received from OpenAI",
+    apiFailedOllama: "Ollama server returned an error",
+    apiEmptyOllama: "Empty response received from Ollama",
+    apiConnectOllama: "Could not connect to Ollama server. Please ensure the service is running.",
+    tooltipIncrease: "Increase",
+    tooltipDecrease: "Decrease",
+    tooltipShow: "Show",
+    tooltipHide: "Hide",
   },
   settings: {
     windowTitle: "Settings",
@@ -129,7 +140,7 @@ export const en: TranslationSchema = {
     about: {
       appName: "CoreType for Linux",
       version: "Version 0.1.0 (Wayland / X11 Native)",
-      description: "Privacy-focused smart typing assistant for the Linux desktop, optimized with native window manager (KWin) integration.",
+      description: "Privacy-focused smart typing assistant for the Linux desktop, optimized with native window manager integration.",
       stack: "Tauri v2 • React 19 • Rust • Linux Desktop",
       githubRepo: "GitHub Repository (github.com/serhatbaykal/coretype-linux)",
       copyInfo: "Copy System Info",
@@ -160,6 +171,15 @@ export const en: TranslationSchema = {
     aiType: "AI Response",
     transformType: "Local Transform",
     viewHistoryHint: "View history: /history or Ctrl+H",
+  },
+  desktopAction: {
+    badgeText: "System Action",
+    actionExecuting: "Executing desktop action...",
+    sudoBlockedTitle: "Privilege Restricted",
+    sudoBlockedMessage: "This operation requires administrative privileges. For your security, CoreType does not modify system files or execute root commands.",
+    commandSuccess: "Action completed successfully",
+    commandFailed: "Error executing desktop action",
+    dismissHint: "Click or press Esc to dismiss",
   },
   slashCommands: [
     {

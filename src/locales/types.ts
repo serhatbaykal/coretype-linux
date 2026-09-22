@@ -41,6 +41,17 @@ export interface TranslationSchema {
     deletedSnippet: string;
     selectedTextLabel: string;
     instructionLabel: string;
+    apiFailedGemini: string;
+    apiEmptyGemini: string;
+    apiFailedOpenAI: string;
+    apiEmptyOpenAI: string;
+    apiFailedOllama: string;
+    apiEmptyOllama: string;
+    apiConnectOllama: string;
+    tooltipIncrease: string;
+    tooltipDecrease: string;
+    tooltipShow: string;
+    tooltipHide: string;
   };
   settings: {
     windowTitle: string;
@@ -150,7 +161,24 @@ export interface TranslationSchema {
     transformType: string;
     viewHistoryHint: string;
   };
+  desktopAction: {
+    badgeText: string;
+    actionExecuting: string;
+    sudoBlockedTitle: string;
+    sudoBlockedMessage: string;
+    commandSuccess: string;
+    commandFailed: string;
+    dismissHint: string;
+  };
   slashCommands: LocalizedSlashCommand[];
+}
+
+export interface DesktopActionPayload {
+  action_type: "execute" | "query" | "blocked_root" | "error";
+  command?: string;
+  title: string;
+  message: string;
+  icon: string;
 }
 
 export interface HistoryEntry {

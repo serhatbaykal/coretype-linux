@@ -1788,3 +1788,189 @@ select option,
   color: var(--text-muted);
   opacity: 0.85;
 }
+
+/* Desktop Action Toast Window */
+.toast-window-container {
+  width: 100vw;
+  height: 100vh;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  background: transparent !important;
+  overflow: hidden;
+  user-select: none;
+  cursor: pointer;
+}
+
+.toast-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: rgba(13, 16, 29, 0.90);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 34px 10px 14px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.85);
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+  overflow: hidden;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.toast-header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.toast-icon-wrap {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.toast-text-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.toast-title {
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+.toast-message {
+  margin: 0;
+  padding: 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #cbd5e1;
+  font-weight: 400;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+.toast-close-btn {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.toast-close-btn:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.toast-progress-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.toast-progress-fill {
+  height: 100%;
+  width: 100%;
+  animation: toastProgressCountdown 5s linear forwards;
+}
+
+@keyframes toastProgressCountdown {
+  0% {
+    width: 100%;
+  }
+  100% {
+    width: 0%;
+  }
+}
+
+/* System Action Badge (Header Bar next to Window Title) */
+.system-action-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #22d3ee;
+  letter-spacing: 0.02em;
+  margin-left: 6px;
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.15);
+  animation: fadeInBadge 0.2s ease-out;
+  line-height: 1;
+  user-select: none;
+}
+
+.system-action-badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: #22d3ee;
+  box-shadow: 0 0 5px #22d3ee;
+  flex-shrink: 0;
+}
+
+.system-action-badge-icon {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.system-action-badge-text {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+@keyframes fadeInBadge {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

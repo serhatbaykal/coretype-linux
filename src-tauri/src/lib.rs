@@ -1191,14 +1191,27 @@ fn save_secret(app_handle: AppHandle, key: String, value: String) -> Result<(), 
     }
 
     let json_str = serde_json::to_string_pretty(&secrets).unwrap_or_default();
-    std::fs::write(&path, &json_str)
-        .map_err(|e| format!("Failed to save secret: {}", e))?;
 
-    // Set 0600 (read/write by owner only) on Linux
+    // Set 0600 (read/write by owner only) securely upon creation on Unix to prevent TOCTOU
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
+            .map_err(|e| format!("Failed to open secret file: {}", e))?;
+        file.write_all(json_str.as_bytes())
+            .map_err(|e| format!("Failed to save secret: {}", e))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::write(&path, &json_str)
+            .map_err(|e| format!("Failed to save secret: {}", e))?;
     }
 
     Ok(())

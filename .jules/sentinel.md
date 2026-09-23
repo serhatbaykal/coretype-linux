@@ -1,0 +1,4 @@
+## 2024-10-24 - [CRITICAL] Fix TOCTOU vulnerability in secret file creation
+**Vulnerability:** The application was writing secrets to a file with default system permissions, and *subsequently* securing those permissions using `std::fs::set_permissions`. This creates a Time-of-Check to Time-of-Use (TOCTOU) race condition where a malicious actor or process could read the secrets before the file was locked down.
+**Learning:** File permissions must be established *at the exact moment of file creation*. Do not rely on sequential operations (create/write then chmod) for sensitive data storage.
+**Prevention:** Use `std::fs::OpenOptions` with `std::os::unix::fs::OpenOptionsExt` to explicitly set `mode(0o600)` when creating secret or sensitive files to guarantee secure-by-default behavior from the start.

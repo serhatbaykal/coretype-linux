@@ -1,0 +1,4 @@
+## 2025-02-09 - [CRITICAL] File Creation TOCTOU (Time-of-Check to Time-of-Use) Vulnerability
+**Vulnerability:** CoreType wrote sensitive API keys directly to `secrets.json` using standard `std::fs::write` (defaulting to current umask, e.g., 0644 or 0664), then manually applied a 0600 mode using `std::fs::set_permissions`. This allowed any process on the host to briefly read the file before its permissions were secured.
+**Learning:** File permissions must be established *at the exact moment of creation*. Setting permissions after writing contents exposes sensitive data during the race condition window.
+**Prevention:** Always use `std::fs::OpenOptions` and `std::os::unix::fs::OpenOptionsExt` to set the mode (e.g. 0o600) via `options.mode(...)` *before* calling `options.open(...)` when writing sensitive local files.

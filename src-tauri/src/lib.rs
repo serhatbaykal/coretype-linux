@@ -807,7 +807,13 @@ pub struct DesktopActionExecutionResult {
 
 pub fn validate_and_sanitize_command(cmd: &str) -> Result<(), String> {
     let lower = cmd.to_lowercase();
-    let tokens: Vec<&str> = lower.split_whitespace().collect();
+
+    // Replace shell control and quotation characters to tokenize cleanly and prevent bypasses
+    let clean_cmd = lower.replace(|c: char| {
+        c.is_whitespace() || c == ';' || c == '|' || c == '&' || c == '\n' ||
+        c == '`' || c == '$' || c == '(' || c == ')' || c == '"' || c == '\'' || c == '='
+    }, " ");
+    let tokens: Vec<&str> = clean_cmd.split_whitespace().collect();
 
     // Dangerous commands that require root/sudo or escalate privileges
     let forbidden_starts = ["sudo", "su", "pkexec", "doas"];
@@ -1690,6 +1696,18 @@ mod tests {
         assert!(validate_and_sanitize_command("lsof -i :1420").is_ok());
         assert!(validate_and_sanitize_command("ss -tulpn").is_ok());
         assert!(validate_and_sanitize_command("ps aux --sort=-%mem").is_ok());
+
+        // Blocked: Command injection bypass attempts
+        assert!(validate_and_sanitize_command("echo hello;sudo bash").is_err());
+        assert!(validate_and_sanitize_command("ls && sudo su").is_err());
+        assert!(validate_and_sanitize_command("echo hello | sudo tee /etc/shadow").is_err());
+        assert!(validate_and_sanitize_command("$(sudo bash)").is_err());
+        assert!(validate_and_sanitize_command("`sudo sh`").is_err());
+        assert!(validate_and_sanitize_command("\"sudo\"").is_err());
+        assert!(validate_and_sanitize_command("sudo=yes").is_err());
+
+        // Allowed: Should not false positive on substrings in filenames
+        assert!(validate_and_sanitize_command("cat my-sudo-script.sh").is_ok());
     }
 
     #[test]

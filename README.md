@@ -23,11 +23,11 @@
 
 - **🎯 Instant Global Spotlight (`Ctrl + Space`):** Summon anywhere. Centers seamlessly across multi-monitor setups with automatic display scale awareness (HiDPI 1.25x, 1.5x, 1.75x, 2.0x).
 - **🧠 Intelligent Active Context:** Automatically discovers your active window and terminal emulator (`kitty`, `konsole`, `alacritty`, `wezterm`, `st`, etc.) using Linux `/proc/[pid]` inspection.
-- **⚡ Natural Language Desktop Automation (`!` prefix):** Type commands in plain English or Turkish (e.g. `!sesi %50 yap`, `!ekranı kilitle`, `!1420 portunu kim dinliyor`).
+- **⚡ Natural Language Desktop Automation (`!` prefix):** Execute desktop operations using natural language prompts (e.g. `!set volume to 50%`, `!lock screen`, `!who is listening on port 1420`). Supports multilingual intent recognition (English, Turkish, etc.).
 - **🛡️ Sandbox & Privilege Security:** Strict guardrails preventing `sudo`, `su`, or destructive command execution with friendly safety notices.
 - **🔔 Glassmorphic Toast Notifications:** Sleek `460 × 74px` acrylic notifications with progress countdowns for desktop automation confirmation.
-- **✂️ Locale-Aware Text Transforms (`/` commands):** Instant `/buyuk`, `/kucuk`, `/baslik` (strict Turkish `İ/I` letter-case grammar), `/say` (counts), `/slug`, and `/json` formatting.
-- **📋 Snippet Vault:** Save reusable snippets via `/kaydet <name> <content>` and paste them with quick slash filtering.
+- **✂️ Locale-Aware Text Transforms (`/` commands):** Instant `/upper`, `/lower`, `/title`, `/count` (characters, words, lines), `/slug`, and `/json` formatting, plus strict Turkish locale `İ/I` grammar support.
+- **📋 Snippet Vault:** Save reusable snippets via `/save <name> <content>` and paste them with quick slash filtering.
 - **🏛️ History Vault (`Ctrl + H`):** Full searchable archive of past prompts and responses, plus terminal-style `Up / Down` command cycling.
 - **⚙️ Comprehensive Settings (`1000 × 900px`):** 7 modular tabs, full English/Turkish i18n, and secure OS Credential Manager integration (GNOME Keyring / KWallet / Secret Service).
 - **🔌 Unix Socket IPC & CLI Control:** Native `$XDG_RUNTIME_DIR/coretype.sock` interface allowing scriptable `coretype --toggle`, `coretype --settings`, and `coretype --history` execution.
@@ -104,15 +104,15 @@ sudo dnf install -y webkit2gtk4.1-devel openssl-devel libappindicator-gtk3-devel
 | `Ctrl + H` | Open History Vault |
 | `Esc` | Close Spotlight / History / Settings |
 | `Up / Down` | Cycle previous command history in prompt input |
-| `! <instruction>` | Execute safe desktop action (e.g. `!sesi %60 yap`, `!ekranı kilitle`) |
-| `/buyuk <text>` | Convert text to uppercase with Turkish `İ/I` rules |
-| `/kucuk <text>` | Convert text to lowercase with Turkish `İ/I` rules |
-| `/baslik <text>` | Convert text to title case |
-| `/say <text>` | Display character, word, and line count |
-| `/slug <text>` | Generate clean URL slug |
-| `/json <json_string>` | Prettify and validate JSON |
-| `/kaydet <ad> <metin>`| Save new reusable snippet |
-| `/<ad>` | Instant snippet lookup and insertion |
+| `! <instruction>` | Execute safe desktop action (e.g. `!set volume to 60%`, `!lock screen`) |
+| `/upper <text>` | Convert text to UPPERCASE (aliases: `/uppercase`, `/buyuk`) |
+| `/lower <text>` | Convert text to lowercase (aliases: `/lowercase`, `/kucuk`) |
+| `/title <text>` | Convert text to Title Case (aliases: `/capitalize`, `/baslik`) |
+| `/count <text>` | Display character, word, and line count (alias: `/say`) |
+| `/slug <text>` | Generate clean URL-safe slug |
+| `/json <json_string>` | Prettify and validate JSON (alias: `/pretty`) |
+| `/save <name> <text>` | Save new reusable snippet (alias: `/kaydet`) |
+| `/<name>` | Instant snippet lookup and insertion |
 
 ---
 

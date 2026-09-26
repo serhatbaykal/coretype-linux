@@ -13,6 +13,8 @@
 
 *Bringing the fluid speed of macOS Spotlight and Raycast to modern Linux desktops with zero system lock-in.*
 
+[🇬🇧 English](README.md) • [🇹🇷 Türkçe](README.tr.md)
+
 </div>
 
 ---

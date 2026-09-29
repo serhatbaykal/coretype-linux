@@ -807,13 +807,16 @@ pub struct DesktopActionExecutionResult {
 
 pub fn validate_and_sanitize_command(cmd: &str) -> Result<(), String> {
     let lower = cmd.to_lowercase();
-    let tokens: Vec<&str> = lower.split_whitespace().collect();
 
     // Dangerous commands that require root/sudo or escalate privileges
-    let forbidden_starts = ["sudo", "su", "pkexec", "doas"];
-    for prefix in &forbidden_starts {
-        if tokens.first() == Some(prefix) || tokens.iter().any(|&t| t == *prefix) {
-            return Err("Command requires root/sudo privileges".to_string());
+    let delimiters = [';', '&', '|', '\n'];
+    for part in lower.split(|c| delimiters.contains(&c)) {
+        let part_tokens: Vec<&str> = part.split_whitespace().collect();
+        let forbidden_starts = ["sudo", "su", "pkexec", "doas"];
+        for prefix in &forbidden_starts {
+            if part_tokens.first() == Some(prefix) || part_tokens.iter().any(|&t| t == *prefix) {
+                return Err("Command requires root/sudo privileges".to_string());
+            }
         }
     }
 
@@ -1706,5 +1709,19 @@ mod tests {
         // y = 1080 - 100 - 48 = 932
         assert_eq!(tx, 1536);
         assert_eq!(ty, 932);
+    }
+}
+
+#[cfg(test)]
+mod additional_tests {
+    use super::*;
+
+    #[test]
+    fn test_command_injection_security_policy() {
+        assert!(validate_and_sanitize_command("ls; sudo rm -rf /").is_err());
+        assert!(validate_and_sanitize_command("echo hello & su root").is_err());
+        assert!(validate_and_sanitize_command("uptime | pkexec bash").is_err());
+        assert!(validate_and_sanitize_command("date\ndoas reboot").is_err());
+        assert!(validate_and_sanitize_command("ls;sudo").is_err());
     }
 }

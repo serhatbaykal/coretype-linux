@@ -1,0 +1,4 @@
+## 2025-03-09 - Fix TOCTOU secret leakage in `save_secret`
+**Vulnerability:** `save_secret` wrote secrets to a file using `std::fs::write` (defaulting to 0644 mode on UNIX) and then called `std::fs::set_permissions` to restrict the mode to 0600. This created a Time-of-Check to Time-of-Use (TOCTOU) race condition allowing local attackers to read secrets before the restrictive permissions were applied. Additionally, the application config directory itself wasn't strictly restricted against traversal.
+**Learning:** Writing files containing secrets with default modes and changing permissions later exposes them to TOCTOU race conditions.
+**Prevention:** Use `std::fs::OpenOptions` with `mode(0o600)` (via `std::os::unix::fs::OpenOptionsExt`) to create secret files with restrictive permissions atomically. Furthermore, secure the directory itself using `std::fs::DirBuilder` with `mode(0o700)`.

@@ -1,0 +1,4 @@
+## 2024-05-18 - [CRITICAL] Time-of-Check to Time-of-Use (TOCTOU) in Secret Storage
+**Vulnerability:** The `save_secret` function stored secrets.json by writing the file first and then changing permissions to 0o600. `secrets_path` also created directories without setting restrictive permissions atomically. This creates a race condition where a malicious process could read the file or directory before permissions are changed.
+**Learning:** This existed because file writing (`std::fs::write`) and permission setting (`std::fs::set_permissions`) were separated operations rather than using atomic open options.
+**Prevention:** Use `std::os::unix::fs::OpenOptionsExt` (`mode`) combined with `std::fs::OpenOptions` to create the file atomically with 0o600 permissions. Similarly, use `std::fs::DirBuilder` with `std::os::unix::fs::DirBuilderExt` to create directories with 0o700 permissions atomically.

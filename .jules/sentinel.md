@@ -1,0 +1,4 @@
+## 2024-10-06 - [CRITICAL] Prevent TOCTOU vulnerabilities in file and directory creation
+**Vulnerability:** A Time-of-Check to Time-of-Use (TOCTOU) vulnerability existed when creating and writing the secrets file (`secrets.json`) and its parent config directory. The files/directories were created with default permissions, and then `set_permissions` was called afterward, leaving a brief window where an attacker could access or modify the secrets file.
+**Learning:** In Unix environments, simply calling `std::fs::set_permissions` after creating a file or directory is insecure for sensitive content. The OS may create the file with world-readable permissions before the explicit `chmod` happens.
+**Prevention:** Always use `std::fs::OpenOptions` with `std::os::unix::fs::OpenOptionsExt` (`mode`) to atomically set permissions when creating sensitive files. For directories, use `std::fs::DirBuilder` with `std::os::unix::fs::DirBuilderExt` (`mode`).

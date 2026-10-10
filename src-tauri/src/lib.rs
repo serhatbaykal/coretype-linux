@@ -1008,9 +1008,31 @@ fn execute_system_action(
     }
 
     // 4. Safe Execution in User-Space
-    let output = std::process::Command::new("sh")
-        .args(["-c", raw_cmd])
-        .output();
+    // Instead of using sh -c which is vulnerable to command injection, we parse
+    // the command string into a program and its arguments safely using shlex.
+    let mut parsed_args = match shlex::split(raw_cmd) {
+        Some(args) => args,
+        None => {
+            return Ok(DesktopActionExecutionResult {
+                success: false,
+                title: "Error".into(),
+                message: "Failed to parse command arguments".into(),
+                icon: "error".into(),
+            });
+        }
+    };
+
+    if parsed_args.is_empty() {
+        return Ok(DesktopActionExecutionResult {
+            success: false,
+            title: "Error".into(),
+            message: "Empty command string".into(),
+            icon: "error".into(),
+        });
+    }
+
+    let program = parsed_args.remove(0);
+    let output = std::process::Command::new(program).args(parsed_args).output();
 
     match output {
         Ok(out) => {

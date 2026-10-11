@@ -1,0 +1,5 @@
+## 2024-05-16 - Prevent TOCTOU Race Conditions in File Creation
+
+**Vulnerability:** A Time-of-Check to Time-of-Use (TOCTOU) race condition occurs when creating a file or directory and then setting its permissions later. During the brief window between creation and permission alteration, an attacker can access the file if the default permissions are too permissive.
+**Learning:** In the `save_secret` function, `std::fs::write` was used to create the secret JSON file, and then `std::fs::set_permissions` was called afterward to secure it with `0600` permissions. This left a small time window where the secrets file could be read by others. Similarly, `std::fs::create_dir_all` was used in `secrets_path`, which uses the default umask to create directories, potentially leaving the config folder accessible before we secure its content.
+**Prevention:** On Unix-like systems, always use `std::fs::OpenOptions` with `std::os::unix::fs::OpenOptionsExt` (`mode(0o600)`) to atomically create files with strict permissions. For directories, use `std::fs::DirBuilder` with `std::os::unix::fs::DirBuilderExt` (`mode(0o700)`) to atomically set permissions during directory creation.

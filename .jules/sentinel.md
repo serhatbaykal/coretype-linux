@@ -1,0 +1,4 @@
+## 2024-05-24 - [TOCTOU Vulnerability in File Creation]
+**Vulnerability:** The `secrets.json` file was created and written with default permissions, and later its permissions were changed using `std::fs::set_permissions` to `0600`. Also the directory holding the config was created using `std::fs::create_dir_all` without strict permissions initially. This could allow an attacker to read secrets during the short window between file creation and permission changes (Time-of-Check to Time-of-Use race condition).
+**Learning:** File creation and writing with sensitive content must not have readable permissions even momentarily.
+**Prevention:** Use `std::fs::OpenOptions` combined with `std::os::unix::fs::OpenOptionsExt` (`.mode(0o600)`) on Unix to atomically set permissions during file creation. Similarly, use `std::fs::DirBuilder` with `.mode(0o700)` on Unix when creating directories for sensitive data.

@@ -607,18 +607,6 @@ fn paste_via_clipboard(app: &AppHandle, text: &str, is_terminal: bool) -> Result
 
 fn capture_selection(app: &AppHandle, is_terminal: bool) -> String {
     let res = with_clipboard(app, |cb| {
-        #[cfg(target_os = "linux")]
-        {
-            use arboard::{GetExtLinux, LinuxClipboardKind};
-            if let Ok(primary_text) = cb.get().clipboard(LinuxClipboardKind::Primary).text() {
-                let trimmed = primary_text.trim();
-                if !trimmed.is_empty() {
-                    eprintln!("[CoreType] Primary selection captured: {} chars", primary_text.len());
-                    return Ok(primary_text);
-                }
-            }
-        }
-
         let original_clipboard = cb.get_text().unwrap_or_default();
 
         // Clear clipboard so we only capture freshly selected text
@@ -636,14 +624,18 @@ fn capture_selection(app: &AppHandle, is_terminal: bool) -> String {
         thread::sleep(Duration::from_millis(150));
 
         let text = cb.get_text().unwrap_or_default();
-        eprintln!("[CoreType] Selection captured via copy shortcut: {} chars", text.len());
+        let trimmed = text.trim().to_string();
+        eprintln!("[CoreType] Selection captured via copy shortcut: {} chars", trimmed.len());
 
         // Restore original clipboard if nothing was selected
-        if text.is_empty() && !original_clipboard.is_empty() {
-            let _ = cb.set_text(original_clipboard);
+        if trimmed.is_empty() {
+            if !original_clipboard.is_empty() {
+                let _ = cb.set_text(original_clipboard);
+            }
+            Ok(String::new())
+        } else {
+            Ok(trimmed)
         }
-
-        Ok(text)
     });
 
     res.unwrap_or_default()
@@ -654,6 +646,10 @@ pub fn toggle_main_window(app: &AppHandle) {
         let is_visible = window.is_visible().unwrap_or(false);
         eprintln!("[CoreType] Toggle main window! Currently visible: {}", is_visible);
         if is_visible {
+            let state = app.state::<TargetWindowState>();
+            if let Ok(mut guard) = state.selected_text.lock() {
+                *guard = String::new();
+            }
             let _ = window.hide();
         } else {
             let state = app.state::<TargetWindowState>();
@@ -1143,8 +1139,21 @@ fn inject_text(
 
 #[tauri::command]
 fn hide_window(app_handle: AppHandle) -> Result<(), String> {
+    let state = app_handle.state::<TargetWindowState>();
+    if let Ok(mut guard) = state.selected_text.lock() {
+        *guard = String::new();
+    }
     if let Some(window) = app_handle.get_webview_window("main") {
         window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_selected_text(app_handle: AppHandle) -> Result<(), String> {
+    let state = app_handle.state::<TargetWindowState>();
+    if let Ok(mut guard) = state.selected_text.lock() {
+        *guard = String::new();
     }
     Ok(())
 }
@@ -1543,6 +1552,7 @@ pub fn run() {
             hide_window,
             show_window,
             get_selected_text,
+            clear_selected_text,
             save_secret,
             get_secret,
             get_display_scale,

@@ -1471,12 +1471,15 @@ function MainView() {
       return;
     }
     setPrompt("");
+    setSelectedText("");
     setStatus("idle");
     setStatusText(t.spotlight.statusIdle);
     setShowSlashMenu(false);
     setPreviewData(null);
     resizeForSlash(0);
+    applyWindowHeight(BASE_HEIGHT);
     if (inputRef.current) inputRef.current.style.height = "auto";
+    invoke("clear_selected_text").catch(() => {});
     await invoke("hide_window");
   }, [showHistoryVault, closeHistoryVault, resizeForSlash, t.spotlight.statusIdle]);
 
@@ -2463,7 +2466,16 @@ function MainView() {
               </svg>
               <span className="context-text">{selectedText.length > 50 ? selectedText.slice(0, 50) + '…' : selectedText}</span>
               <span className="context-stats">{selectedText.length} {t.spotlight.chars} · {selectedText.trim().split(/\s+/).filter(Boolean).length} {t.spotlight.words}</span>
-              <button className="context-clear" onClick={() => setSelectedText("")}>×</button>
+              <button
+                className="context-clear"
+                onClick={() => {
+                  setSelectedText("");
+                  applyWindowHeight(BASE_HEIGHT);
+                  invoke("clear_selected_text").catch(() => {});
+                }}
+              >
+                ×
+              </button>
             </div>
           )}
 

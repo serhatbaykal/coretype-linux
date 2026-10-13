@@ -164,27 +164,34 @@ pub fn calculate_window_geometry(
     requested_width: u32,
     requested_height: u32,
 ) -> WindowGeometry {
+    let scale = if monitor.scale_factor > 0.0 { monitor.scale_factor } else { 1.0 };
+    let phys_w = (requested_width as f64 * scale).round() as u32;
+    let phys_h = (requested_height as f64 * scale).round() as u32;
+
     // Dynamic boundary clamping: leave safe margins so windows never overflow small screens
-    let margin_x = 40u32;
-    let margin_y = 60u32;
+    let margin_x = (40.0 * scale).round() as u32;
+    let margin_y = (60.0 * scale).round() as u32;
 
-    let max_allowed_w = monitor.width.saturating_sub(margin_x).max(320);
-    let max_allowed_h = monitor.height.saturating_sub(margin_y).max(200);
+    let max_allowed_w = monitor.width.saturating_sub(margin_x).max((320.0 * scale) as u32);
+    let max_allowed_h = monitor.height.saturating_sub(margin_y).max((200.0 * scale) as u32);
 
-    let actual_w = requested_width.min(max_allowed_w);
-    let actual_h = requested_height.min(max_allowed_h);
+    let actual_phys_w = phys_w.min(max_allowed_w);
+    let actual_phys_h = phys_h.min(max_allowed_h);
 
-    let center_x = monitor.x + ((monitor.width.saturating_sub(actual_w)) / 2) as i32;
-    let center_y = monitor.y + ((monitor.height.saturating_sub(actual_h)) / 2) as i32;
+    let center_x = monitor.x + ((monitor.width.saturating_sub(actual_phys_w)) / 2) as i32;
+    let center_y = monitor.y + ((monitor.height.saturating_sub(actual_phys_h)) / 2) as i32;
 
     let safe_x = center_x.max(monitor.x);
     let safe_y = center_y.max(monitor.y);
 
+    let logical_w = ((actual_phys_w as f64) / scale).round() as u32;
+    let logical_h = ((actual_phys_h as f64) / scale).round() as u32;
+
     WindowGeometry {
         x: safe_x,
         y: safe_y,
-        width: actual_w,
-        height: actual_h,
+        width: logical_w,
+        height: logical_h,
     }
 }
 
@@ -681,10 +688,11 @@ pub fn toggle_main_window(app: &AppHandle) {
             eprintln!("[CoreType] Universal positioning on monitor ({},{},{}x{}): placing at ({}, {}) size {}x{}",
                 monitor.x, monitor.y, monitor.width, monitor.height, geom.x, geom.y, geom.width, geom.height);
 
-            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: geom.width, height: geom.height }));
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: geom.width as f64, height: geom.height as f64 }));
             let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: geom.x, y: geom.y }));
             let _ = window.show();
             let _ = window.set_focus();
+            let _ = window.emit("reset_main_view", ());
 
             #[cfg(debug_assertions)]
             {
@@ -723,7 +731,7 @@ pub fn toggle_history_window(app: &AppHandle) {
             eprintln!("[CoreType] Universal positioning history on monitor ({},{},{}x{}): placing at ({}, {}) size {}x{}",
                 monitor.x, monitor.y, monitor.width, monitor.height, geom.x, geom.y, geom.width, geom.height);
 
-            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: geom.width, height: geom.height }));
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: geom.width as f64, height: geom.height as f64 }));
             let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: geom.x, y: geom.y }));
             let _ = window.show();
             let _ = window.set_focus();
@@ -758,7 +766,7 @@ fn open_settings_window(app_handle: AppHandle) -> Result<(), String> {
             let _ = existing.hide();
             return Ok(());
         }
-        let _ = existing.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: geom.width, height: geom.height }));
+        let _ = existing.set_size(tauri::Size::Logical(tauri::LogicalSize { width: geom.width as f64, height: geom.height as f64 }));
         let _ = existing.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: geom.x, y: geom.y }));
         let _ = existing.show();
         let _ = existing.set_focus();
@@ -778,7 +786,7 @@ fn open_settings_window(app_handle: AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-        let _ = win.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: geom.width, height: geom.height }));
+        let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize { width: geom.width as f64, height: geom.height as f64 }));
         let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: geom.x, y: geom.y }));
         let _ = win.show();
         let _ = win.set_focus();
@@ -1068,27 +1076,32 @@ fn execute_system_action(
 }
 
 #[tauri::command]
-fn get_display_scale() -> f64 {
-    1.0
+fn get_display_scale(app_handle: AppHandle) -> f64 {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        window.scale_factor().unwrap_or(1.0)
+    } else {
+        1.0
+    }
 }
 
 #[tauri::command]
 fn resize_window(app_handle: AppHandle, logical_width: f64, logical_height: f64) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
         let current_size = window.inner_size().ok();
-        let needs_resize = match current_size {
-            Some(cur) => (cur.width as f64 - logical_width).abs() > 1.0 || (cur.height as f64 - logical_height).abs() > 1.0,
-            None => true,
-        };
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let current_logical_w = current_size.map(|s| s.width as f64 / scale).unwrap_or(0.0);
+        let current_logical_h = current_size.map(|s| s.height as f64 / scale).unwrap_or(0.0);
+
+        let needs_resize = (current_logical_w - logical_width).abs() > 1.0 || (current_logical_h - logical_height).abs() > 1.0;
 
         if needs_resize {
-            let res = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                width: logical_width as u32,
-                height: logical_height as u32,
+            let res = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                width: logical_width,
+                height: logical_height,
             }));
             eprintln!(
-                "[CoreType] Window resized to {}x{} (result: {:?})",
-                logical_width, logical_height, res
+                "[CoreType] Window resized to logical {}x{} (scale: {}, result: {:?})",
+                logical_width, logical_height, scale, res
             );
         }
     } else {
@@ -1597,8 +1610,8 @@ mod tests {
         let geom = calculate_window_geometry(&monitor, 840, 260);
         assert_eq!(geom.width, 840);
         assert_eq!(geom.height, 260);
-        assert_eq!(geom.x, 1500);
-        assert_eq!(geom.y, 950);
+        assert_eq!(geom.x, 1185);
+        assert_eq!(geom.y, 852);
     }
 
     #[test]

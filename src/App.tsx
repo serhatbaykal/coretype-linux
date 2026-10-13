@@ -82,7 +82,7 @@ function applyTheme(settings: AppSettings) {
   root.style.setProperty("--accent-glow", `rgba(${r}, ${g}, ${b}, 0.15)`);
   root.style.setProperty("--border-focus", `rgba(${r}, ${g}, ${b}, 0.4)`);
   root.style.setProperty("--border-color", `rgba(${r}, ${g}, ${b}, 0.12)`);
-  root.style.setProperty("--bg-app", `rgba(10, 12, 22, ${settings.opacity})`);
+  root.style.setProperty("--bg-app", "#0c0e17");
   root.style.setProperty("--bg-input", `rgba(${r}, ${g}, ${b}, 0.06)`);
 }
 
@@ -1578,6 +1578,7 @@ function MainView() {
   useEffect(() => {
     let unlistenToggle: (() => void) | undefined;
     let unlistenOpen: (() => void) | undefined;
+    let unlistenReset: (() => void) | undefined;
 
     listen("toggle_history_vault", () => {
       if (showHistoryVaultRef.current) {
@@ -1591,9 +1592,16 @@ function MainView() {
       openHistoryVaultRef.current();
     }).then(fn => { unlistenOpen = fn; });
 
+    listen("reset_main_view", () => {
+      if (showHistoryVaultRef.current) {
+        closeHistoryVaultRef.current();
+      }
+    }).then(fn => { unlistenReset = fn; });
+
     return () => {
       unlistenToggle?.();
       unlistenOpen?.();
+      unlistenReset?.();
     };
   }, []);
 

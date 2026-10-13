@@ -780,7 +780,7 @@ fn open_settings_window(app_handle: AppHandle) -> Result<(), String> {
         .inner_size(geom.width as f64, geom.height as f64)
         .resizable(true)
         .decorations(false)
-        .transparent(true)
+        .transparent(false)
         .always_on_top(true)
         .visible(false)
         .build()

@@ -83,7 +83,7 @@ function applyTheme(settings: AppSettings) {
   root.style.setProperty("--border-focus", `rgba(${r}, ${g}, ${b}, 0.4)`);
   root.style.setProperty("--border-color", `rgba(${r}, ${g}, ${b}, 0.12)`);
   root.style.setProperty("--bg-app", "#0c0e17");
-  root.style.setProperty("--bg-input", `rgba(${r}, ${g}, ${b}, 0.06)`);
+  root.style.setProperty("--bg-input", "#141828");
 }
 
 const MAX_HISTORY = 50;

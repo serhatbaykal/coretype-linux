@@ -2265,7 +2265,7 @@ function MainView() {
           position: "absolute", inset: 0, zIndex: 100,
           display: "flex", flexDirection: "column", alignItems: "center",
           justifyContent: "center", gap: "10px", padding: "20px",
-          background: "var(--glass-bg)", backdropFilter: "blur(20px)",
+          background: "#0c0e17",
           borderRadius: "var(--window-radius)", textAlign: "center"
         }}>
           <div style={{ fontSize: "22px" }}>👋</div>

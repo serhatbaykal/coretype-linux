@@ -596,6 +596,7 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "shlex",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

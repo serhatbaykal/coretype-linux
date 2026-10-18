@@ -1012,8 +1012,13 @@ fn execute_system_action(
     }
 
     // 4. Safe Execution in User-Space
-    let output = std::process::Command::new("sh")
-        .args(["-c", raw_cmd])
+    let args = shlex::split(raw_cmd).unwrap_or_default();
+    if args.is_empty() {
+        return Err("Command is empty after parsing".to_string());
+    }
+
+    let output = std::process::Command::new(&args[0])
+        .args(&args[1..])
         .output();
 
     match output {

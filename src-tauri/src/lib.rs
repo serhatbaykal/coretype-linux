@@ -1012,9 +1012,17 @@ fn execute_system_action(
     }
 
     // 4. Safe Execution in User-Space
-    let output = std::process::Command::new("sh")
-        .args(["-c", raw_cmd])
-        .output();
+    let output = match shlex::split(raw_cmd) {
+        Some(args) if !args.is_empty() => {
+            std::process::Command::new(&args[0])
+                .args(&args[1..])
+                .output()
+        }
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Failed to parse command arguments",
+        )),
+    };
 
     match output {
         Ok(out) => {

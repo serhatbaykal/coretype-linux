@@ -1,0 +1,4 @@
+## 2024-11-13 - [CRITICAL] Prevent Command Injection by avoiding sh -c
+**Vulnerability:** The application was passing user-provided commands directly to `sh -c` inside `std::process::Command::new("sh").args(["-c", raw_cmd])`. This allows shell command injection if the user input contains operators like `;`, `&`, `|`, `$()`, etc., even if there's basic blacklist validation.
+**Learning:** `sh -c` is extremely dangerous because the shell will interpret any shell metacharacters in the input. While the app had a blacklist, blacklists are notoriously easy to bypass (e.g. `$(echo command)`).
+**Prevention:** Instead of using a shell to parse arguments, use a safe parsing library like `shlex` to parse the string into an array of arguments, and execute the command directly using `std::process::Command::new(&args[0]).args(&args[1..])`. This passes arguments directly to the execve system call, bypassing the shell and avoiding injection.

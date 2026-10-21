@@ -1012,9 +1012,30 @@ fn execute_system_action(
     }
 
     // 4. Safe Execution in User-Space
-    let output = std::process::Command::new("sh")
-        .args(["-c", raw_cmd])
-        .output();
+    let output = match shlex::split(raw_cmd) {
+        Some(mut args) if !args.is_empty() => {
+            let program = args.remove(0);
+            std::process::Command::new(program)
+                .args(args)
+                .output()
+        }
+        _ => {
+            let res_payload = DesktopActionPayload {
+                action_type: "error".into(),
+                command: None,
+                title: "Error".into(),
+                message: "Failed to parse command.".into(),
+                icon: "error".into(),
+            };
+            let _ = show_toast_notification(&app_handle, res_payload);
+            return Ok(DesktopActionExecutionResult {
+                success: false,
+                title: "Error".into(),
+                message: "Failed to parse command.".into(),
+                icon: "error".into(),
+            });
+        }
+    };
 
     match output {
         Ok(out) => {

@@ -361,7 +361,29 @@ console.warn("CT_ACT:" + res + "|||" + sx + "|||" + sy + "|||" + sw + "|||" + sh
         };
         let script_arg = format!("string:{}", script_path);
 
-        if std::fs::write(&script_path, script).is_ok() {
+        let _ = std::fs::remove_file(&script_path);
+        let write_result = {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&script_path)
+                    .and_then(|mut f| { use std::io::Write; f.write_all(script.as_bytes()) })
+            }
+            #[cfg(not(unix))]
+            {
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&script_path)
+                    .and_then(|mut f| { use std::io::Write; f.write_all(script.as_bytes()) })
+            }
+        };
+
+        if write_result.is_ok() {
             let _ = std::process::Command::new("dbus-send")
                 .args([
                     "--session",

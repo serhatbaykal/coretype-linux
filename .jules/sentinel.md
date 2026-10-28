@@ -1,0 +1,4 @@
+## 2024-05-18 - [Fix Arbitrary File Overwrite in Predictable Temp Files]
+**Vulnerability:** CoreType acts by writing a dynamically generated JavaScript snippet to a predictable file name (`/tmp/coretype_act_<pid>.js`) and executes it using `dbus-send`. This implementation was vulnerable to Arbitrary File Overwrite via Symlink attack (CWE-59) since `std::fs::write` blindly overwrites files.
+**Learning:** Writing to predictable paths in globally writable directories (like `/tmp`) using higher-level functions (like `std::fs::write`) is fundamentally unsafe because they lack atomicity regarding symlinks and existing files.
+**Prevention:** Use `std::fs::OpenOptions` with `.create_new(true)` which guarantees atomicity by failing if the file or a symlink exists. Ensure proper mode setting (like 0o600) via `std::os::unix::fs::OpenOptionsExt` for Unix environments before writing to temporary files.

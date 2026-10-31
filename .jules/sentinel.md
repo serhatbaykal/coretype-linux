@@ -1,0 +1,4 @@
+## 2024-05-20 - Fix TOCTOU Vulnerabilities in File and Socket Creation
+**Vulnerability:** Time-of-Check to Time-of-Use (TOCTOU) race conditions existed when creating the `secrets.json` file and the Unix IPC socket. Files and sockets were created with default (potentially unsafe) permissions, and then secured via `set_permissions` in a separate step. This left a small window where an attacker could access or replace these sensitive files.
+**Learning:** Creating files or sockets securely requires atomic operations at creation time. Setting permissions after creation is inherently vulnerable to race conditions in concurrent or multi-user environments.
+**Prevention:** Always use `std::fs::OpenOptions` with `std::os::unix::fs::OpenOptionsExt` (`mode`) and `std::fs::DirBuilder` with `mode` to set permissions atomically at creation time, ensuring no window of vulnerability exists.

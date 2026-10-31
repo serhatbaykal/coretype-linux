@@ -1213,14 +1213,25 @@ fn save_secret(app_handle: AppHandle, key: String, value: String) -> Result<(), 
     }
 
     let json_str = serde_json::to_string_pretty(&secrets).unwrap_or_default();
-    std::fs::write(&path, &json_str)
-        .map_err(|e| format!("Failed to save secret: {}", e))?;
 
-    // Set 0600 (read/write by owner only) on Linux
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
+            .map_err(|e| format!("Failed to open secret file: {}", e))?;
+        file.write_all(json_str.as_bytes())
+            .map_err(|e| format!("Failed to save secret: {}", e))?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(&path, &json_str)
+            .map_err(|e| format!("Failed to save secret: {}", e))?;
     }
 
     Ok(())
@@ -1382,19 +1393,24 @@ fn get_system_context(app_handle: AppHandle) -> Result<SystemContext, String> {
 }
 
 pub fn get_ipc_socket_path() -> String {
-    if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
+    let base_dir = if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
         if !dir.is_empty() {
-            return format!("{}/coretype.sock", dir);
+            dir
+        } else {
+            std::env::temp_dir().to_string_lossy().to_string()
         }
-    }
+    } else {
+        std::env::temp_dir().to_string_lossy().to_string()
+    };
+
     #[cfg(unix)]
     {
         let uid = unsafe { libc::getuid() };
-        format!("{}/coretype-u{}.sock", std::env::temp_dir().to_string_lossy(), uid)
+        format!("{}/coretype-u{}/coretype.sock", base_dir, uid)
     }
     #[cfg(not(unix))]
     {
-        format!("{}/coretype.sock", std::env::temp_dir().to_string_lossy())
+        format!("{}/coretype/coretype.sock", base_dir)
     }
 }
 
@@ -1439,19 +1455,28 @@ pub fn run() {
 
             // Setup Unix domain socket listener for instant CLI --toggle / --settings / --history IPC
             let socket_path = get_ipc_socket_path();
+
+            // Create secure parent directory
+            if let Some(parent) = std::path::Path::new(&socket_path).parent() {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::DirBuilderExt;
+                    let _ = std::fs::DirBuilder::new()
+                        .recursive(true)
+                        .mode(0o700)
+                        .create(parent);
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = std::fs::DirBuilder::new()
+                        .recursive(true)
+                        .create(parent);
+                }
+            }
+
             let _ = std::fs::remove_file(&socket_path);
 
             if let Ok(listener) = std::os::unix::net::UnixListener::bind(&socket_path) {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    if let Ok(metadata) = std::fs::metadata(&socket_path) {
-                        let mut perms = metadata.permissions();
-                        perms.set_mode(0o700);
-                        let _ = std::fs::set_permissions(&socket_path, perms);
-                    }
-                }
-
                 let app_handle = app.handle().clone();
                 thread::spawn(move || {
                     use std::io::{BufRead, BufReader};

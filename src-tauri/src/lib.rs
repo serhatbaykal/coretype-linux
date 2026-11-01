@@ -1011,9 +1011,20 @@ fn execute_system_action(
         });
     }
 
-    // 4. Safe Execution in User-Space
-    let output = std::process::Command::new("sh")
-        .args(["-c", raw_cmd])
+    // 4. Safe Execution in User-Space (Parsed to avoid sh -c shell injection)
+    let args = match shlex::split(raw_cmd) {
+        Some(a) if !a.is_empty() => a,
+        _ => {
+            return Ok(DesktopActionExecutionResult {
+                success: false,
+                title: action.title,
+                message: "Failed to parse command arguments".into(),
+                icon: "error".into(),
+            });
+        }
+    };
+    let output = std::process::Command::new(&args[0])
+        .args(&args[1..])
         .output();
 
     match output {

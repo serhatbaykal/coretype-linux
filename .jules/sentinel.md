@@ -1,0 +1,4 @@
+## 2025-02-27 - Command Injection Vulnerability in execute_system_action
+**Vulnerability:** User commands were executed using `sh -c "<command>"` in `execute_system_action`. This allowed for command injection vulnerabilities since shell meta-characters (like `;`, `|`, `&&`, `$()`) could be evaluated by the shell, bypassing the keyword-based sanitization in `validate_and_sanitize_command`.
+**Learning:** Keyword-based sanitization is insufficient to prevent command injection when user input is passed directly to a shell (`sh -c`). The shell has complex evaluation rules that attackers can leverage to bypass simple text filtering.
+**Prevention:** Avoid executing system commands via a shell interpreter (`sh -c`, `bash -c`, etc.) when handling user input. Instead, use a shell parser (like the `shlex` crate) to safely split commands into an executable and arguments, and invoke the process directly using `std::process::Command::new(binary).args(args)`.

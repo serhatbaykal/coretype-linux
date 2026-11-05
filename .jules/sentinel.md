@@ -1,0 +1,4 @@
+## 2025-02-28 - [CRITICAL] Prevent Command Injection via Shell Execution
+**Vulnerability:** User input passed to `execute_system_action` was executed inside `sh -c` (`std::process::Command::new("sh").args(["-c", raw_cmd])`). This allowed shell metacharacters and multiple commands to be executed, leading to command injection vulnerabilities.
+**Learning:** Using `sh -c` is dangerous when handling raw command strings as it processes shell variables, expansions, and multiple command operators (like `;`, `&&`, `|`), bypassing simple string validation.
+**Prevention:** Instead of evaluating the command within a shell, use a library like `shlex` (e.g., `shlex::split`) to parse the command string into a discrete program name and list of arguments. Execute this using `std::process::Command::new(&args[0]).args(&args[1..])` to safely invoke the binary directly.

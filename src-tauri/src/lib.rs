@@ -1012,8 +1012,20 @@ fn execute_system_action(
     }
 
     // 4. Safe Execution in User-Space
-    let output = std::process::Command::new("sh")
-        .args(["-c", raw_cmd])
+    let mut args = shlex::split(raw_cmd).unwrap_or_default();
+    if args.is_empty() {
+        return Ok(DesktopActionExecutionResult {
+            success: false,
+            title: "Error".into(),
+            message: "No valid command to execute.".into(),
+            icon: "error".into(),
+        });
+    }
+
+    let program = args.remove(0);
+
+    let output = std::process::Command::new(program)
+        .args(args)
         .output();
 
     match output {

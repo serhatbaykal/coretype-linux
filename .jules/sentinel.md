@@ -1,0 +1,4 @@
+## 2024-11-10 - [Fix TOCTOU vulnerability in secret storage]
+**Vulnerability:** A Time-Of-Check to Time-Of-Use (TOCTOU) vulnerability was found when creating directories and sensitive files. By default, `std::fs::create_dir_all` and `std::fs::write` create items with default permissions, before an explicit call to `set_permissions` changed them to restrictive defaults.
+**Learning:** During the brief window between creating the file/directory and calling `set_permissions`, the file was open for read/write on Unix systems by other system users, potentially leaking sensitive data like `secrets.json`.
+**Prevention:** Always use atomic permission setting functions like `std::fs::DirBuilder::new().mode(...)` to create directories, and `std::fs::OpenOptions::new().mode(...)` combined with `std::os::unix::fs::OpenOptionsExt` and `std::os::unix::fs::DirBuilderExt` to create sensitive files with their final target permissions set upfront.
